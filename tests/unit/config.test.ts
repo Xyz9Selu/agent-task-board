@@ -9,7 +9,7 @@ process.env.ADT_DIR = testDir;
 
 // Dynamic import to pick up env var
 const configModule = await import('../../src/config.js');
-const { loadConfig, saveConfig, DEFAULT_TIMEOUTS } = configModule;
+const { loadConfig, saveConfig, CONFIG_PATH, DEFAULT_TIMEOUTS } = configModule;
 
 beforeEach(() => {
   fs.mkdirSync(testDir, { recursive: true });
@@ -49,5 +49,29 @@ describe('config save/load round-trip', () => {
     });
     const loaded = loadConfig();
     expect(loaded.stageTimeouts).toEqual(DEFAULT_TIMEOUTS);
+  });
+
+  it('fills in default stageTimeouts when only partial keys are saved', () => {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+      githubToken: 't',
+      repos: ['a/b'],
+      ccMmPath: '/bin/cc-mm',
+      stageTimeouts: { reqs: 5, impl: 45 },
+    }));
+    const loaded = loadConfig();
+    expect(loaded.stageTimeouts.reqs).toBe(5);
+    expect(loaded.stageTimeouts.design).toBe(DEFAULT_TIMEOUTS.design);
+    expect(loaded.stageTimeouts.impl).toBe(45);
+    expect(loaded.stageTimeouts.review).toBe(DEFAULT_TIMEOUTS.review);
+  });
+
+  it('defaults ccMmPath to cc-mm when not present in saved config', () => {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+      githubToken: 't',
+      repos: ['a/b'],
+      stageTimeouts: { reqs: 10, design: 20, impl: 60, review: 30 },
+    }));
+    const loaded = loadConfig();
+    expect(loaded.ccMmPath).toBe('cc-mm');
   });
 });
