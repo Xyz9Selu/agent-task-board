@@ -1,75 +1,33 @@
-# React + TypeScript + Vite
+# agent-dev-team (adt)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A local CLI that drives a multi-agent dev team from GitHub Issues.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install && npm run build && npm link && adt setup
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Prompts for: GitHub PAT (repo scope), repos to watch (owner/repo), path to cc-mm.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Usage
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+# Schedule periodic runs:
+while true; do adt run; sleep 60; done
+# or cron: */1 * * * * adt run >> ~/.adt/log 2>&1
 ```
+
+Commands: `adt run`, `adt status`, `adt pause owner/repo#42`, `adt resume owner/repo#42`, `adt clean`.
+
+## How it works
+
+1. Label an Issue `adt:ready`
+2. Next `adt run` picks it up
+3. Team walks through 4 stages: **reqs** (PM) -> **design** (Dev) -> **impl** (Dev) -> **review** (Reviewer)
+4. At reqs, design, and merge the team pauses for your input
+5. Everything happens in GitHub Issue/PR comments and labels
+
+## Requirements
+
+Node.js 20+, cc-mm CLI, local git clone
