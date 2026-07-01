@@ -30,6 +30,7 @@ function buildPromptFile(
   issueData: { number: number; title: string; body: string | null; repo: string },
   comments: { id: number; body: string; user: { login: string } | null }[],
   stage: Stage,
+  branchName: string,
 ): string {
   const ctxDir = path.join(worktreePath, ".adt");
   fs.mkdirSync(ctxDir, { recursive: true });
@@ -38,7 +39,7 @@ function buildPromptFile(
   fs.writeFileSync(path.join(ctxDir, "issue.json"), JSON.stringify(issueData, null, 2));
   fs.writeFileSync(path.join(ctxDir, "comments.json"), JSON.stringify(comments, null, 2));
   fs.writeFileSync(path.join(ctxDir, "stage.txt"), stage);
-  fs.writeFileSync(path.join(ctxDir, "branch.txt"), `adt/issue-${issueData.number}-auto`);
+  fs.writeFileSync(path.join(ctxDir, "branch.txt"), branchName);
 
   // Write the prompt that tells cc-mm what to do
   const prompt = `You are running stage: ${stage} for issue #${issueData.number} in repo ${issueData.repo}.

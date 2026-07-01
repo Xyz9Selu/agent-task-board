@@ -19,7 +19,8 @@ describe("buildPromptFile", () => {
     const issue = { number: 42, title: "Fix bug", body: "description of bug", repo: "owner/repo" };
     const comments = [{ id: 1, body: "ok", user: { login: "dev" } }];
 
-    const promptPath = buildPromptFile(WT, issue, comments, "reqs");
+    const branch = "adt/issue-42-fix-bug";
+    const promptPath = buildPromptFile(WT, issue, comments, "reqs", branch);
 
     expect(promptPath).toBe(path.join(WT, ".adt", "prompt.md"));
     expect(fs.existsSync(promptPath)).toBe(true);
@@ -32,7 +33,7 @@ describe("buildPromptFile", () => {
 
     expect(fs.existsSync(path.join(WT, ".adt", "branch.txt"))).toBe(true);
     const branchTxt = fs.readFileSync(path.join(WT, ".adt", "branch.txt"), "utf-8");
-    expect(branchTxt).toBe("adt/issue-42-auto");
+    expect(branchTxt).toBe("adt/issue-42-fix-bug");
 
     const issueJson = JSON.parse(fs.readFileSync(path.join(WT, ".adt", "issue.json"), "utf-8"));
     expect(issueJson.number).toBe(42);
