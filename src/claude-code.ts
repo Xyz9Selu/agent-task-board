@@ -93,17 +93,19 @@ async function spawnCcMm(opts: SpawnOpts): Promise<SpawnResult> {
 
     const timeoutMs = opts.maxDuration * 60 * 1000;
     let killed = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timer = setTimeout(() => {
       killed = true;
       child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
       }, 30000);
     }, timeoutMs);
 
     child.on("close", (code) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
 
       if (killed) {
         resolve({
@@ -130,7 +132,7 @@ async function spawnCcMm(opts: SpawnOpts): Promise<SpawnResult> {
         const result = parseStageResult(raw);
         resolve({ ok: true, result });
       } catch (e) {
-        // Retry: the output is in stdout, try parsing that
+        // Include stdout tail in error for debugging
         resolve({
           ok: false,
           error: `Failed to parse result: ${e}. stdout tail: ${stdout.slice(-2000)}`,
@@ -141,6 +143,7 @@ async function spawnCcMm(opts: SpawnOpts): Promise<SpawnResult> {
 
     child.on("error", (err) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       resolve({ ok: false, error: `Failed to spawn cc-mm: ${err.message}`, partialOutput: "" });
     });
   });

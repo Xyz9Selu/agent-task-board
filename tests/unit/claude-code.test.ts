@@ -30,6 +30,10 @@ describe("buildPromptFile", () => {
     const stageTxt = fs.readFileSync(path.join(WT, ".adt", "stage.txt"), "utf-8");
     expect(stageTxt).toBe("reqs");
 
+    expect(fs.existsSync(path.join(WT, ".adt", "branch.txt"))).toBe(true);
+    const branchTxt = fs.readFileSync(path.join(WT, ".adt", "branch.txt"), "utf-8");
+    expect(branchTxt).toBe("adt/issue-42-auto");
+
     const issueJson = JSON.parse(fs.readFileSync(path.join(WT, ".adt", "issue.json"), "utf-8"));
     expect(issueJson.number).toBe(42);
     expect(issueJson.title).toBe("Fix bug");
