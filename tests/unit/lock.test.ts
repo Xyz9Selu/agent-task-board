@@ -23,8 +23,8 @@ describe('acquireLock', () => {
   it('returns false when lock is already held (re-acquire)', () => {
     fs.mkdirSync(testDir, { recursive: true });
     expect(acquireLock()).toBe(true);
-    // Second acquire from same process should fail
-    // (flock is per-fd, so same process can re-acquire; test the pattern)
+    const result = acquireLock();
+    expect(result).toBe(false);
   });
 });
 
