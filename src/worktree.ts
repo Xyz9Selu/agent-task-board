@@ -27,9 +27,13 @@ async function ensureWorktree(repoPath: string, issueNumber: number, branch: str
     return wtPath;
   }
 
-  // Check if branch exists
-  const branches = await git.branchLocal();
-  if (branches.all.includes(branch)) {
+  // Fetch to sync remote refs (branch may have been pushed by another agent)
+  await git.fetch();
+  // Check if branch exists (local or remote tracking)
+  const branches = await git.branch(["-a"]);
+  const branchExistsLocal = branches.all.includes(branch);
+  const branchExistsRemote = branches.all.includes(`remotes/origin/${branch}`);
+  if (branchExistsLocal || branchExistsRemote) {
     // Branch exists, add worktree for it
     await git.raw("worktree", "add", wtPath, branch);
   } else {

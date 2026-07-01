@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ensureWorktree, removeWorktree, worktreePath, branchName, worktreesDir } from "../../src/worktree.js";
+import { ensureWorktree, removeWorktree, pruneWorktrees, worktreePath, branchName, worktreesDir } from "../../src/worktree.js";
 import simpleGit from "simple-git";
 
 const TMP = `/tmp/worktree-test-${Date.now()}`;
@@ -47,8 +47,9 @@ describe("ensureWorktree and removeWorktree", () => {
     expect(fs.existsSync(path.join(wtPath, ".adt"))).toBe(true);
     expect(fs.existsSync(path.join(wtPath, "README.md"))).toBe(true);
     await removeWorktree(REPO, 1);
-    // Worktree path may still exist as empty dir after remove --force, but worktree list should not include it
-    // Just verify we do not crash
+    // Verify worktree is no longer in git worktree list
+    const list = await git.raw("worktree", "list");
+    expect(list).not.toContain(wtPath);
   });
 
   it("returns existing worktree path on second call", async () => {
@@ -56,5 +57,25 @@ describe("ensureWorktree and removeWorktree", () => {
     const wtPath1 = await ensureWorktree(REPO, 2, branch);
     const wtPath2 = await ensureWorktree(REPO, 2, branch);
     expect(wtPath1).toBe(wtPath2);
+  });
+
+  it("prunes stale worktree entries after manual directory removal", async () => {
+    const branch = branchName(3, "prune-test");
+    const wtPath = await ensureWorktree(REPO, 3, branch);
+    expect(fs.existsSync(wtPath)).toBe(true);
+
+    // Manually delete worktree directory to simulate a crash
+    fs.rmSync(wtPath, { recursive: true, force: true });
+
+    // The worktree should still appear in git worktree list before pruning
+    const listBefore = await git.raw("worktree", "list");
+    expect(listBefore).toContain(wtPath);
+
+    // Prune stale entries
+    await pruneWorktrees(REPO);
+
+    // After pruning, the worktree should no longer appear in the list
+    const listAfter = await git.raw("worktree", "list");
+    expect(listAfter).not.toContain(wtPath);
   });
 });
