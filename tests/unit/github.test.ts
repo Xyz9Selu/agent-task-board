@@ -64,6 +64,7 @@ describe("github module (nock)", () => {
     it("fetches comments", async () => {
       nock(BASE)
         .get("/repos/owner/repo/issues/42/comments")
+        .query({ per_page: 100 })
         .reply(200, [{ id: 1, body: "ok", created_at: "2026-01-01T00:00:00Z", user: { login: "dev" } }]);
       const comments = await getComments(client, "owner/repo", 42);
       expect(comments).toHaveLength(1);
@@ -74,6 +75,7 @@ describe("github module (nock)", () => {
     it("returns empty array when no comments exist", async () => {
       nock(BASE)
         .get("/repos/owner/repo/issues/42/comments")
+        .query({ per_page: 100 })
         .reply(200, []);
       const comments = await getComments(client, "owner/repo", 42);
       expect(comments).toEqual([]);
@@ -177,6 +179,7 @@ describe("github module (nock)", () => {
     it("returns true when any review is APPROVED", async () => {
       nock(BASE)
         .get("/repos/owner/repo/pulls/99/reviews")
+        .query({ per_page: 100 })
         .reply(200, [{ id: 1, state: "APPROVED", user: { login: "reviewer" } }]);
       expect(await hasApprovedReview(client, "owner/repo", 99)).toBe(true);
     });
@@ -184,6 +187,7 @@ describe("github module (nock)", () => {
     it("returns false when no review is APPROVED", async () => {
       nock(BASE)
         .get("/repos/owner/repo/pulls/99/reviews")
+        .query({ per_page: 100 })
         .reply(200, [{ id: 1, state: "COMMENTED", user: { login: "reviewer" } }]);
       expect(await hasApprovedReview(client, "owner/repo", 99)).toBe(false);
     });
@@ -191,6 +195,7 @@ describe("github module (nock)", () => {
     it("returns false when there are no reviews", async () => {
       nock(BASE)
         .get("/repos/owner/repo/pulls/99/reviews")
+        .query({ per_page: 100 })
         .reply(200, []);
       expect(await hasApprovedReview(client, "owner/repo", 99)).toBe(false);
     });

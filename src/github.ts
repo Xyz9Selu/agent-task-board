@@ -1,4 +1,5 @@
 import { Octokit } from "@octokit/rest";
+import { ALL_ADT_LABELS } from "./labels.js";
 
 type OctokitClient = Octokit;
 
@@ -54,7 +55,7 @@ async function getIssue(client: OctokitClient, repo: string, issueNumber: number
 
 async function getComments(client: OctokitClient, repo: string, issueNumber: number): Promise<GhComment[]> {
   const [owner, name] = repo.split("/");
-  const { data } = await client.rest.issues.listComments({ owner, repo: name, issue_number: issueNumber });
+  const { data } = await client.rest.issues.listComments({ owner, repo: name, issue_number: issueNumber, per_page: 100 });
   return data as GhComment[];
 }
 
@@ -65,13 +66,6 @@ async function postComment(client: OctokitClient, repo: string, issueNumber: num
 
 async function replaceAdtLabel(client: OctokitClient, repo: string, issueNumber: number, newLabel: string): Promise<void> {
   const [owner, name] = repo.split("/");
-  const ALL_ADT_LABELS = [
-    "adt:ready", "adt:blocked", "adt:merge-ready", "adt:cancelled",
-    "adt:reqs-running", "adt:reqs-waiting",
-    "adt:design-running", "adt:design-waiting",
-    "adt:impl-running", "adt:impl-waiting",
-    "adt:review-running", "adt:review-waiting",
-  ];
   // Remove all existing adt:* labels
   const { data: issue } = await client.rest.issues.get({ owner, repo: name, issue_number: issueNumber });
   const existingLabels: string[] = (issue.labels || []).map((l: any) => l.name);
@@ -100,7 +94,7 @@ async function isPRClosed(client: OctokitClient, repo: string, prNumber: number)
 
 async function hasApprovedReview(client: OctokitClient, repo: string, prNumber: number): Promise<boolean> {
   const [owner, name] = repo.split("/");
-  const { data } = await client.rest.pulls.listReviews({ owner, repo: name, pull_number: prNumber });
+  const { data } = await client.rest.pulls.listReviews({ owner, repo: name, pull_number: prNumber, per_page: 100 });
   return data.some((r: any) => r.state === "APPROVED");
 }
 
