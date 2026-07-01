@@ -1,0 +1,5 @@
+# 0002 — Trust cc-mm's built-in sandboxing
+
+Blast radius for each `cc-mm` invocation is bounded by what `cc-mm --allowed-tools` permits for the role at that stage. `adt` does not add OS-level sandboxing (no chroot, no seccomp, no Docker). Each role in the `agent-dev-team` skill specifies a curated `--allowed-tools` list (e.g. PM gets `gh issue view/comment` and read-only file tools; Dev gets file write + git but not `gh release`; Reviewer gets `gh pr create` but not `gh pr merge`).
+
+We considered wrapping `cc-mm` in a container per stage and binding the worktree as the only writable mount. Rejected for v1 because the operational cost (Docker dependency, slow cold start) outweighs the marginal safety improvement over `cc-mm`'s own tool gating. The contract is: `cc-mm` is responsible for staying inside its tool whitelist; if it doesn't, that's a `cc-mm` bug, not an `adt` bug.

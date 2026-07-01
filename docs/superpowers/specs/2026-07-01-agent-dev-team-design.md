@@ -325,9 +325,12 @@ npm install -g agent-dev-team
 adt setup
 # prompts for:
 #   - GitHub PAT (with repo scope)
-#   - Default repo (owner/repo)
+#   - Repos to watch: a list of "owner/repo" (one or more — see ADR 0008)
 #   - Path to cc-mm binary (default: which cc-mm)
 # writes ~/.adt/config.json
+# add/remove repos later via:
+#   adt setup --add owner/repo
+#   adt setup --remove owner/repo
 
 # 3. Schedule periodic runs
 # user adds ONE of:
@@ -338,16 +341,15 @@ adt setup
 
 # 4. (Optional) Inspect state
 adt status
-# shows all tasks, current stage, last activity
+# shows all tasks grouped by repo, current stage, last activity
 
 # 5. (Optional) Pause/resume a specific task
-adt pause 42
-adt resume 42
+adt pause <owner/repo>#<n>
+adt resume <owner/repo>#<n>
 ```
 
 ## 13. Out of scope (v1)
 
-- Multi-repo orchestration (only the configured default repo in v1)
 - GitHub App / webhook support (PAT + polling only)
 - Subagent delegation (Reviewer is single-process)
 - Cost / token tracking (rely on cc-mm's own accounting)
@@ -355,7 +357,22 @@ adt resume 42
 - Composing with `grill-with-docs` / `domain-modeling` skills
 - Team-level parallelism (serial only)
 
-## 14. Open questions for the implementation plan
+## 14. Architectural decision records
+
+Decisions made during brainstorming are recorded as ADRs under `docs/adr/`:
+
+| ADR | Title |
+|---|---|
+| 0001 | Skip waiting-user tasks; keep worktree until merge |
+| 0002 | Trust cc-mm's built-in sandboxing |
+| 0003 | Approval signal: `/adt-approve` comment OR PR Approve event |
+| 0004 | Cancellation preserves all stage artifacts (covers `/adt-cancel`, Issue close, PR close without merge) |
+| 0005 | Worker leaves cc-mm running on crash; stages are not idempotent |
+| 0006 | Stage timeouts and graceful kill |
+| 0007 | Branch conflicts block the task; user handles manually |
+| 0008 | Multi-repo support in v1; setup configures repo list |
+
+## 15. Open questions for the implementation plan
 
 - Should `adt run` log to stdout, syslog, or `~/.adt/log`?
 - Exact format of `prompt.md` — templated from stage + context, or hand-written per stage?
