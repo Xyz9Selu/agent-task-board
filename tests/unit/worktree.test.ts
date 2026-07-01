@@ -2,23 +2,24 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ensureWorktree, removeWorktree, pruneWorktrees, worktreePath, branchName, worktreesDir } from "../../src/worktree.js";
-import simpleGit from "simple-git";
+import { simpleGit as createGit } from "simple-git";
+import type { SimpleGit } from "simple-git";
 
 const TMP = `/tmp/worktree-test-${Date.now()}`;
 const BARE = path.join(TMP, "bare");
 const REPO = path.join(TMP, "test-repo");
-let git: ReturnType<typeof simpleGit>;
+let git: SimpleGit;
 
 beforeEach(async () => {
   // Create a bare repository to act as origin
   fs.mkdirSync(BARE, { recursive: true });
-  const bareGit = simpleGit(BARE);
+  const bareGit = createGit(BARE);
   await bareGit.init(true); // bare repo
 
   // Clone from bare to create test repo with origin remote
-  const cloneGit = simpleGit(TMP);
+  const cloneGit = createGit(TMP);
   await cloneGit.clone(BARE, "test-repo");
-  git = simpleGit(REPO);
+  git = createGit(REPO);
   await git.addConfig("user.email", "test@test.com");
   await git.addConfig("user.name", "Test");
   fs.writeFileSync(path.join(REPO, "README.md"), "# test\n");

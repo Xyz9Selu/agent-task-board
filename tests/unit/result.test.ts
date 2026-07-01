@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseStageResult, StageResult } from '../../src/result.js';
+import { parseStageResult } from '../../src/result.js';
 
 describe('parseStageResult', () => {
   it('parses waiting-user variant', () => {
@@ -10,8 +10,10 @@ describe('parseStageResult', () => {
     });
     const result = parseStageResult(raw);
     expect(result.status).toBe('waiting-user');
-    expect(result.summary).toBe('Need clarification on X');
-    expect(result.artifacts).toEqual({ questionList: 'What is X?' });
+    if (result.status === 'waiting-user') {
+      expect(result.summary).toBe('Need clarification on X');
+      expect(result.artifacts).toEqual({ questionList: 'What is X?' });
+    }
   });
 
   it('parses done variant', () => {
@@ -21,8 +23,10 @@ describe('parseStageResult', () => {
     });
     const result = parseStageResult(raw);
     expect(result.status).toBe('done');
-    expect(result.summary).toBe('Implemented feature Y');
-    expect(result.artifacts).toBeUndefined();
+    if (result.status === 'done') {
+      expect(result.summary).toBe('Implemented feature Y');
+      expect(result.artifacts).toBeUndefined();
+    }
   });
 
   it('parses done variant with artifacts', () => {
@@ -33,8 +37,10 @@ describe('parseStageResult', () => {
     });
     const result = parseStageResult(raw);
     expect(result.status).toBe('done');
-    expect(result.summary).toBe('Done');
-    expect(result.artifacts!.designPath).toBe('docs/designs/42.md');
+    if (result.status === 'done') {
+      expect(result.summary).toBe('Done');
+      expect(result.artifacts!.designPath).toBe('docs/designs/42.md');
+    }
   });
 
   it('parses blocked variant', () => {
@@ -45,8 +51,10 @@ describe('parseStageResult', () => {
     });
     const result = parseStageResult(raw);
     expect(result.status).toBe('blocked');
-    expect(result.reason).toBe('Push rejected: non-fast-forward');
-    expect(result.details).toBe('Branch adt/issue-42-foo diverged');
+    if (result.status === 'blocked') {
+      expect(result.reason).toBe('Push rejected: non-fast-forward');
+      expect(result.details).toBe('Branch adt/issue-42-foo diverged');
+    }
   });
 
   it('throws on invalid status', () => {

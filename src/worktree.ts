@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
-import simpleGit, { type SimpleGit } from "simple-git";
+import simpleGit, { simpleGit as createGit, type SimpleGit } from "simple-git";
 
 function worktreesDir(repoPath: string): string {
   return path.join(repoPath, "..", ".adt-worktrees");
@@ -15,7 +15,7 @@ function branchName(issueNumber: number, slug: string): string {
 }
 
 async function ensureWorktree(repoPath: string, issueNumber: number, branch: string): Promise<string> {
-  const git: SimpleGit = simpleGit(repoPath);
+  const git: SimpleGit = createGit(repoPath);
   const wtPath = worktreePath(repoPath, issueNumber);
   const wtDir = worktreesDir(repoPath);
 
@@ -48,7 +48,7 @@ async function ensureWorktree(repoPath: string, issueNumber: number, branch: str
 }
 
 async function removeWorktree(repoPath: string, issueNumber: number): Promise<void> {
-  const git: SimpleGit = simpleGit(repoPath);
+  const git: SimpleGit = createGit(repoPath);
   const wtPath = worktreePath(repoPath, issueNumber);
 
   if (!fs.existsSync(wtPath)) return;
@@ -57,7 +57,7 @@ async function removeWorktree(repoPath: string, issueNumber: number): Promise<vo
 }
 
 async function pruneWorktrees(repoPath: string): Promise<void> {
-  const git: SimpleGit = simpleGit(repoPath);
+  const git: SimpleGit = createGit(repoPath);
   await git.raw("worktree", "prune");
 }
 
