@@ -1,5 +1,6 @@
 {
   "name": "agent-dev-team",
+  "type": "module",
   "version": "0.1.0",
   "description": "Local CLI that drives a multi-agent dev team from GitHub Issues",
   "bin": { "adt": "./dist/src/cli.js" },
