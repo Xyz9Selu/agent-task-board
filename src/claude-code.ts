@@ -71,10 +71,12 @@ You MUST write valid JSON. Exit code 0 on success.
 
 async function spawnCcMm(opts: SpawnOpts): Promise<SpawnResult> {
   const tools = opts.allowedTools.length > 0 ? opts.allowedTools : (DEFAULT_TOOLS[opts.stage] || []);
+  // Read prompt from file and pass via --print (-p)
+  const promptContent = fs.readFileSync(opts.promptFile, "utf-8");
   const args = [
-    "-p", opts.promptFile,
+    "-p", promptContent,
     "--allowedTools", tools.join(","),
-    "--output-format", "json",
+    "--dangerously-skip-permissions",
   ];
 
   const env = { ...process.env, ...opts.env };

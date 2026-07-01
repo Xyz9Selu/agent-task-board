@@ -114,9 +114,18 @@ async function runWorker(): Promise<void> {
 
     // 6. List runnable tasks from store
     let task: TaskRow | null = null;
-    const pending = listRunnableTasks(db);
-    if (pending.length > 0) {
-      task = pending[0]; // Sorted by FIFO + stage priority
+    // First, check for waiting-user tasks that might have been approved
+    const waitingTasks = db!.prepare(
+      "SELECT * FROM tasks WHERE status = 'waiting-user' ORDER BY created_at ASC"
+    ).all() as TaskRow[];
+    if (waitingTasks.length > 0) {
+      task = waitingTasks[0]; // Check for approval
+    }
+    if (!task) {
+      const pending = listRunnableTasks(db);
+      if (pending.length > 0) {
+        task = pending[0]; // Sorted by FIFO + stage priority
+      }
     }
 
     // 7. If nothing in store, scan GitHub for new adt:ready issues
@@ -142,14 +151,33 @@ async function runWorker(): Promise<void> {
       return;
     }
 
-    // 8. Check for approval (design stage)
-    if (task.stage === "design") {
-      const client = createClient(config.githubToken);
-      const approved = await checkApproval(client, task.repo, task.issue_number, task.stage);
-      if (!approved) {
-        console.log(`Task #${task.issue_number} is waiting for design approval.`);
-        return;
+    // 8. If the selected task is waiting for user, check for approval before proceeding
+    if (task.status === "waiting-user") {
+      if (task.stage === "design") {
+        const client = createClient(config.githubToken);
+        const approved = await checkApproval(client, task.repo, task.issue_number, task.stage);
+        if (!approved) {
+          console.log(`Task #${task.issue_number} is waiting for design approval.`);
+          return;
+        }
+        // Approved — advance to impl
+        const next = nextStage(task.stage);
+        if (next) {
+          markTaskFinished(db, task.id, "pending");
+          db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, task.id);
+          task.stage = next;
+          task.status = "pending";
+          const label = labelForStage(next, "running");
+          const client2 = createClient(config.githubToken);
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, task.repo, task.issue_number, label));
+          await withGh("postComment", () => postComment(client2, task.repo, task.issue_number,
+            `## adt: design approved\\n\\nDesign has been approved. Proceeding to implementation.`));
+        }
+        return; // Next worker run will pick up impl
       }
+      // For reqs waiting-user, we need the user to reply — skip for now
+      console.log(`Task #${task.issue_number} is waiting for user input (${task.stage}).`);
+      return;
     }
 
     // 9. Check for merged PR (review stage)
