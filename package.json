@@ -3,7 +3,9 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Local CLI that drives a multi-agent dev team from GitHub Issues",
-  "bin": { "adt": "./dist/src/cli.js" },
+  "bin": {
+    "adt": "./dist/src/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -21,7 +23,8 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
-    "vitest": "^2.0.0",
-    "typescript": "^5.5.0"
+    "nock": "^14.0.16",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
   }
 }
