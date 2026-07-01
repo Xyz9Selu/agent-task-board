@@ -1,0 +1,8 @@
+{
+  "number": 42,
+  "title": "Add healthcheck endpoint",
+  "state": "open",
+  "body": "We need a GET /health endpoint that returns 200 with status ok.",
+  "created_at": "2026-07-01T00:00:00Z",
+  "labels": [{ "name": "adt:ready" }]
+}
