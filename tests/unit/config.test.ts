@@ -25,7 +25,7 @@ describe('config save/load round-trip', () => {
       githubToken: 'ghp_test123',
       repos: ['owner/repo', 'owner/repo2'],
       ccMmPath: '/usr/local/bin/cc-mm',
-      stageTimeouts: { reqs: 5, design: 15, impl: 45, review: 25 },
+      stageTimeouts: { grill: 12, reqs: 5, design: 15, impl: 45, review: 25 },
     };
     saveConfig(cfg);
     const loaded = loadConfig();
@@ -45,7 +45,7 @@ describe('config save/load round-trip', () => {
       githubToken: 't',
       repos: ['a/b'],
       ccMmPath: '/bin/cc-mm',
-      stageTimeouts: { reqs: 10, design: 20, impl: 60, review: 30 },
+      stageTimeouts: { grill: 15, reqs: 10, design: 20, impl: 60, review: 30 },
     });
     const loaded = loadConfig();
     expect(loaded.stageTimeouts).toEqual(DEFAULT_TIMEOUTS);
@@ -69,7 +69,7 @@ describe('config save/load round-trip', () => {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify({
       githubToken: 't',
       repos: ['a/b'],
-      stageTimeouts: { reqs: 10, design: 20, impl: 60, review: 30 },
+      stageTimeouts: { grill: 15, reqs: 10, design: 20, impl: 60, review: 30 },
     }));
     const loaded = loadConfig();
     expect(loaded.ccMmPath).toBe('cc-mm');

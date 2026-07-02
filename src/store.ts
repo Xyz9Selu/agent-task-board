@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-type Stage = 'reqs' | 'design' | 'impl' | 'review';
+type Stage = 'grill' | 'reqs' | 'design' | 'impl' | 'review';
 type TaskStatus = 'pending' | 'running' | 'waiting-user' | 'done' | 'failed' | 'blocked' | 'cancelled';
 
 interface TaskRow {
@@ -51,7 +51,7 @@ function openDb(dbPath: string): Database.Database {
   return db;
 }
 
-const STAGE_ORDER: Record<Stage, number> = { reqs: 0, design: 1, impl: 2, review: 3 };
+const STAGE_ORDER: Record<Stage, number> = { grill: -1, reqs: 0, design: 1, impl: 2, review: 3 };
 
 function listRunnableTasks(db: Database.Database): TaskRow[] {
   const stmt = db.prepare(`

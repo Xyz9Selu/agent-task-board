@@ -28,7 +28,7 @@ describe("github module (nock)", () => {
     it("returns issues with adt:ready label", async () => {
       nock(BASE)
         .get("/repos/owner/repo/issues")
-        .query({ labels: "adt:ready", state: "open", per_page: 100 })
+        .query({ labels: "adt:ready", state: "open", per_page: 100, direction: "asc", sort: "created" })
         .reply(200, [{ number: 42, title: "Fix bug", state: "open", body: "desc", created_at: "2026-01-01T00:00:00Z", labels: [{ name: "adt:ready" }] }]);
 
       const issues = await listReadyIssues(client, "owner/repo");
@@ -41,7 +41,7 @@ describe("github module (nock)", () => {
     it("returns empty array when no adt:ready issues exist", async () => {
       nock(BASE)
         .get("/repos/owner/repo/issues")
-        .query({ labels: "adt:ready", state: "open", per_page: 100 })
+        .query({ labels: "adt:ready", state: "open", per_page: 100, direction: "asc", sort: "created" })
         .reply(200, []);
 
       const issues = await listReadyIssues(client, "owner/repo");

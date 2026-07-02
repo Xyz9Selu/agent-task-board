@@ -3,7 +3,7 @@ import { loadConfig, type Config, type Stage, ADT_DIR } from "./config.js";
 import { openDb, listRunnableTasks, markTaskRunning, markTaskFinished, insertTask, getTask, type TaskRow } from "./store.js";
 import { acquireLock, releaseLock } from "./lock.js";
 import { nextStage, labelForStage, LABEL_BLOCKED } from "./labels.js";
-import { createClient, listReadyIssues, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview, isPRMerged } from "./github.js";
+import { createClient, listReadyIssues, listIssuesByLabel, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview, isPRMerged } from "./github.js";
 import { ensureWorktree, pruneWorktrees, branchName } from "./worktree.js";
 import { spawnCcMm, buildPromptFile, DEFAULT_TOOLS } from "./claude-code.js";
 import * as path from "node:path";
@@ -190,14 +190,27 @@ async function runWorker(): Promise<void> {
     if (!task) {
       const client = createClient(config.githubToken);
       for (const repo of config.repos) {
-        const issues = await withGh("listReadyIssues", () => listReadyIssues(client, repo));
-        if (issues.length > 0) {
-          const issue = issues[0];
+        // First scan for adt:grill (highest priority — exploratory needs)
+        const grillIssues = await withGh("listIssuesByLabel", () => listIssuesByLabel(client, repo, "adt:grill"));
+        if (grillIssues.length > 0) {
+          const issue = grillIssues[0];
           const slug = slugFromTitle(issue.title);
           const branch = branchName(issue.number, slug);
-          const repoPath = process.cwd(); // Assume cwd is the repo clone
+          const repoPath = process.cwd();
           const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
-          const taskId = insertTask(db, repo, issue.number, "reqs", "pending", wtPath, branch);
+          const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
+          task = getTask(db, taskId);
+          break;
+        }
+        // Then scan for adt:ready (normal flow)
+        const readyIssues = await withGh("listReadyIssues", () => listReadyIssues(client, repo));
+        if (readyIssues.length > 0) {
+          const issue = readyIssues[0];
+          const slug = slugFromTitle(issue.title);
+          const branch = branchName(issue.number, slug);
+          const repoPath = process.cwd();
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
+          const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;
         }
@@ -282,7 +295,7 @@ async function runWorker(): Promise<void> {
           const branch = branchName(issue.number, slug);
           const repoPath = process.cwd();
           const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
-          const taskId = insertTask(db, repo, issue.number, "reqs", "pending", wtPath, branch);
+          const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;
         }

@@ -36,6 +36,19 @@ interface GhReview {
   user: { login: string } | null;
 }
 
+async function listIssuesByLabel(client: OctokitClient, repo: string, label: string): Promise<GhIssue[]> {
+  const [owner, name] = repo.split("/");
+  const { data } = await client.rest.issues.listForRepo({
+    owner, repo: name,
+    labels: label,
+    state: "open",
+    per_page: 100,
+    direction: "asc",
+    sort: "created",
+  });
+  return data as GhIssue[];
+}
+
 async function listReadyIssues(client: OctokitClient, repo: string): Promise<GhIssue[]> {
   const [owner, name] = repo.split("/");
   const { data } = await client.rest.issues.listForRepo({
@@ -101,7 +114,7 @@ async function hasApprovedReview(client: OctokitClient, repo: string, prNumber: 
 }
 
 export {
-  createClient, listReadyIssues, getIssue, getComments,
+  createClient, listReadyIssues, listIssuesByLabel, getIssue, getComments,
   postComment, replaceAdtLabel, getPR, isPRMerged, isPRClosed, hasApprovedReview,
   OctokitClient, GhIssue, GhComment, GhPR, GhReview,
 };

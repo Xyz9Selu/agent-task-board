@@ -5,9 +5,9 @@ import * as os from 'node:os';
 const ADT_DIR = process.env.ADT_DIR || path.join(os.homedir(), '.adt');
 const CONFIG_PATH = path.join(ADT_DIR, 'config.json');
 
-const DEFAULT_TIMEOUTS = { reqs: 10, design: 20, impl: 60, review: 30 } as const;
+const DEFAULT_TIMEOUTS = { grill: 15, reqs: 10, design: 20, impl: 60, review: 30 } as const;
 
-type Stage = 'reqs' | 'design' | 'impl' | 'review';
+type Stage = 'grill' | 'reqs' | 'design' | 'impl' | 'review';
 
 interface Config {
   githubToken: string;
