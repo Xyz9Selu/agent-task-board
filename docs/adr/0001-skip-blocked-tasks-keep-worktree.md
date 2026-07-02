@@ -1,0 +1,5 @@
+# 0001 — Skip waiting-user tasks; keep worktree until merge
+
+When multiple tasks are queued, the worker skips any task whose current stage is `waiting-user` (i.e., it has done all it can and is blocked on human reply). It picks the next runnable task by FIFO on `issue.createdAt`. A blocked task's git worktree stays on disk until the PR for that task is merged, so context is preserved across long user pauses.
+
+We considered strict FIFO (blocked tasks hold their slot, new tasks wait behind them) and FIFO-with-slot-preservation (blocked tasks skip but the queue position is reserved). Strict FIFO is simplest but wastes the team when the user is away. Slot-preservation is overkill for v1 — when the user returns, they will see the oldest blocked task anyway and can approve/reject it. Holding the worktree avoids the cost of rebuilding context if the user takes days to reply.
