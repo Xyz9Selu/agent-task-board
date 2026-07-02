@@ -168,12 +168,16 @@ async function runWorker(): Promise<void> {
 
     // 6. List runnable tasks from store
     let task: TaskRow | null = null;
-    // First, check for waiting-user tasks that might have been approved
+    let skipWaitingUserCheck = false;
+    // First, check for waiting-user tasks that have been approved or replied to
     const waitingTasks = db!.prepare(
       "SELECT * FROM tasks WHERE status = 'waiting-user' ORDER BY created_at ASC"
     ).all() as TaskRow[];
-    if (waitingTasks.length > 0) {
-      task = waitingTasks[0]; // Check for approval
+    for (const wt of waitingTasks) {
+      task = wt;
+      // Break — we'll process it via the waiting-user branch below.
+      // If the branch determines "still waiting, do nothing", we'll fall through.
+      break;
     }
     if (!task) {
       const pending = listRunnableTasks(db);
@@ -198,40 +202,95 @@ async function runWorker(): Promise<void> {
           break;
         }
       }
-    }
-
-    if (!task) {
-      console.log("No runnable tasks.");
-      return;
+      if (!task) {
+        console.log("No runnable tasks.");
+        return;
+      }
     }
 
     // 8. If the selected task is waiting for user, check for approval before proceeding
-    if (task.status === "waiting-user") {
-      if (task.stage === "design") {
+    let fallThroughToGitHub = false;
+    if (task && task.status === "waiting-user" && !skipWaitingUserCheck) {
+      const waitingTask: TaskRow = task;
+      if (waitingTask.stage === "design") {
         const client = createClient(config.githubToken);
-        const approved = await checkApproval(client, task.repo, task.issue_number, task.stage);
+        const approved = await checkApproval(client, waitingTask.repo, waitingTask.issue_number, waitingTask.stage);
         if (!approved) {
-          console.log(`Task #${task.issue_number} is waiting for design approval.`);
+          console.log(`Task #${waitingTask.issue_number} is waiting for design approval.`);
           return;
         }
         // Approved — advance to impl
-        const next = nextStage(task.stage);
+        const next = nextStage(waitingTask.stage);
         if (next) {
-          markTaskFinished(db, task.id, "pending");
-          db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, task.id);
-          task.stage = next;
-          task.status = "pending";
+          markTaskFinished(db, waitingTask.id, "pending");
+          db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, waitingTask.id);
           const label = labelForStage(next, "running");
           const client2 = createClient(config.githubToken);
-          await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, task.repo, task.issue_number, label));
-          await withGh("postComment", () => postComment(client2, task.repo, task.issue_number,
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, waitingTask.repo, waitingTask.issue_number, label));
+          await withGh("postComment", () => postComment(client2, waitingTask.repo, waitingTask.issue_number,
             `## adt: design approved\\n\\nDesign has been approved. Proceeding to implementation.`));
         }
         return; // Next worker run will pick up impl
       }
-      // For reqs waiting-user, we need the user to reply — skip for now
-      console.log(`Task #${task.issue_number} is waiting for user input (${task.stage}).`);
-      return;
+      // For reqs waiting-user, check if user has replied (any non-bot comment
+      // after the last waiting-user comment). If so, advance to design.
+      if (waitingTask.stage === "reqs") {
+        const client = createClient(config.githubToken);
+        const comments = await withGh("getComments", () => getComments(client, waitingTask.repo, waitingTask.issue_number));
+        // Find the last "## adt: reqs" comment (the PM's waiting-user marker)
+        let lastAdtIdx = -1;
+        for (let i = 0; i < comments.length; i++) {
+          if (/^## adt: reqs/m.test(comments[i].body)) lastAdtIdx = i;
+        }
+        // Any user comment (login is not the bot) AFTER lastAdtIdx means reply
+        const userReplied = comments.slice(lastAdtIdx + 1).some(c =>
+          c.user && c.user.login && c.user.login !== "github-actions[bot]"
+        );
+        if (!userReplied) {
+          console.log(`Task #${waitingTask.issue_number} is waiting for user input (${waitingTask.stage}).`);
+          // Skip this waiting-user task, fall through to GitHub scan for other runnable issues
+          fallThroughToGitHub = true;
+        } else {
+          // User replied — advance to design
+          const next = nextStage(waitingTask.stage);
+          if (next) {
+            markTaskFinished(db, waitingTask.id, "pending");
+            db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, waitingTask.id);
+            const label = labelForStage(next, "running");
+            const client2 = createClient(config.githubToken);
+            await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, waitingTask.repo, waitingTask.issue_number, label));
+            await withGh("postComment", () => postComment(client2, waitingTask.repo, waitingTask.issue_number,
+              `## adt: reqs complete (user replied)\\n\\nProceeding to ${next}.`));
+            return; // We did work, return; next run picks up design stage
+          }
+        }
+      } else {
+        // Other stages waiting-user: skip
+        console.log(`Task #${waitingTask.issue_number} is waiting for user input (${waitingTask.stage}).`);
+        return;
+      }
+    }
+
+    if (fallThroughToGitHub) {
+      // Reset task to null and re-run the GitHub scan block
+      const client = createClient(config.githubToken);
+      for (const repo of config.repos) {
+        const issues = await withGh("listReadyIssues", () => listReadyIssues(client, repo));
+        if (issues.length > 0) {
+          const issue = issues[0];
+          const slug = slugFromTitle(issue.title);
+          const branch = branchName(issue.number, slug);
+          const repoPath = process.cwd();
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
+          const taskId = insertTask(db, repo, issue.number, "reqs", "pending", wtPath, branch);
+          task = getTask(db, taskId);
+          break;
+        }
+      }
+      if (!task) {
+        console.log("No runnable tasks.");
+        return;
+      }
     }
 
     // (Cleanup pass is at step 5b — runs before task selection so merged-PR

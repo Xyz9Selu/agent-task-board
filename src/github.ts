@@ -43,6 +43,8 @@ async function listReadyIssues(client: OctokitClient, repo: string): Promise<GhI
     labels: "adt:ready",
     state: "open",
     per_page: 100,
+    direction: "asc",     // FIFO: oldest first (ADR 0001)
+    sort: "created",
   });
   return data as GhIssue[];
 }

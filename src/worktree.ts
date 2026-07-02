@@ -55,6 +55,12 @@ async function ensureWorktree(repoPath: string, issueNumber: number, branch: str
 
   // Fetch to sync remote refs (branch may have been pushed by another agent)
   await git.fetch();
+  // Explicitly fetch origin/main to ensure ref is up-to-date
+  try {
+    await git.fetch("origin", "main");
+  } catch (e) {
+    // 'main' may not exist on remote (rare); fall back
+  }
   // Check if branch exists (local or remote tracking)
   const branches = await git.branch(["-a"]);
   const branchExistsLocal = branches.all.includes(branch);
@@ -63,8 +69,9 @@ async function ensureWorktree(repoPath: string, issueNumber: number, branch: str
     // Branch exists, add worktree for it
     await git.raw("worktree", "add", wtPath, branch);
   } else {
-    // Create new branch from HEAD of main
-    await git.raw("worktree", "add", "-b", branch, wtPath, "origin/main");
+    // Create new branch from origin/main (or HEAD if origin/main missing)
+    const baseRef = branches.all.includes("remotes/origin/main") ? "origin/main" : "HEAD";
+    await git.raw("worktree", "add", "-b", branch, wtPath, baseRef);
   }
 
   // Create .adt context directory
