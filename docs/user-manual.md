@@ -92,6 +92,9 @@ Each `adt run` advances exactly one task by one stage. If a stage needs your inp
 | `adt pause owner/repo#42` | Pause a task (it won't be picked up) |
 | `adt resume owner/repo#42` | Resume a paused task |
 | `adt clean` | Prune stale git worktrees |
+| `adt habit add <name>` | Register a habit for daily tracking (idempotent) |
+| `adt habit done <name>` | Mark a habit done for today (idempotent same-day) |
+| `adt habit list` | Show today's status for all registered habits |
 
 ## How to interact during a task
 
@@ -186,6 +189,7 @@ Remove a repo: `adt setup --remove owner/repo-two`
 - **Config**: `~/.adt/config.json`
 - **Task DB**: `~/.adt/state.db` (SQLite)
 - **Lock**: `~/.adt/lock.pid` (prevents concurrent workers)
+- **Habits**: `~/.adt/habits.json` (plain JSON, single-user)
 - **Worktrees**: `<repo>/../.adt-worktrees/issue-<n>/`
 - **Logs**: stdout from your scheduler (cron/systemd). Add `>> ~/.adt/log` to capture.
 
@@ -224,3 +228,31 @@ Run `adt clean` periodically to prune stale worktrees.
 - The design doc is committed to `docs/designs/<issue>.md` on the task branch — you can review it there before approving.
 - All team comments are prefixed with `## adt: <stage>` so they're easy to find in the GitHub UI.
 - If you have multiple clones of the same repo, each clone needs its own `adt` instance (or run `adt` from a single canonical clone).
+
+## adt habit
+
+`adt habit` is a small daily checklist that lives next to the rest of the team state — single-user, per-machine, plain JSON. Three commands:
+
+```bash
+adt habit add exercise     # register a habit (idempotent)
+adt habit done exercise    # mark it done for today (idempotent same-day)
+adt habit list             # show today's status for all habits
+```
+
+`list` prints one line per habit with a ✅ (done today) or ❌ (not yet). On an empty store it prints `No habits yet. Add one with: adt habit add <name>`.
+
+Data lives in `~/.adt/habits.json` and looks like:
+
+```json
+{
+  "habits": [
+    {
+      "name": "exercise",
+      "createdAt": "2026-07-02T13:45:00.000Z",
+      "completions": ["2026-07-01", "2026-07-02"]
+    }
+  ]
+}
+```
+
+"Today" is your local date (`YYYY-MM-DD`), so marking a habit done at 11pm counts for today even if UTC has already rolled over. `done` exits non-zero if the habit isn't registered (run `add` first). v1 is intentionally minimal — no streaks, no reminders, no history views.

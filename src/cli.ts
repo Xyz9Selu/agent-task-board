@@ -4,6 +4,14 @@ import { loadConfig, saveConfig, type Config, ADT_DIR } from "./config.js";
 import { runWorker } from "./worker.js";
 import { openDb, getAllTasks, type TaskRow } from "./store.js";
 import { acquireLock, releaseLock } from "./lock.js";
+import {
+  addHabit,
+  markHabitDone,
+  listHabitsForToday,
+  todayLocal,
+  EmptyHabitNameError,
+  UnknownHabitError,
+} from "./habits.js";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createInterface } from "node:readline";
@@ -136,6 +144,61 @@ program
       .run("pending", repo, issueNumber, "cancelled");
     db.close();
     console.log(`Resumed ${taskRef}`);
+  });
+
+const habitCmd = program
+  .command("habit")
+  .description("Track daily habits (single-user, local)");
+
+habitCmd
+  .command("add <name>")
+  .description("Register a habit (idempotent)")
+  .action((name: string) => {
+    try {
+      const h = addHabit(name);
+      console.log(`Added '${h.name}'`);
+    } catch (e) {
+      if (e instanceof EmptyHabitNameError) {
+        console.error("error: habit name cannot be empty");
+        process.exit(1);
+      }
+      throw e;
+    }
+  });
+
+habitCmd
+  .command("done <name>")
+  .description("Mark a habit done for today (idempotent same-day)")
+  .action((name: string) => {
+    try {
+      markHabitDone(name);
+      console.log(`Marked '${name}' done for ${todayLocal()}`);
+    } catch (e) {
+      if (e instanceof EmptyHabitNameError) {
+        console.error("error: habit name cannot be empty");
+        process.exit(1);
+      }
+      if (e instanceof UnknownHabitError) {
+        console.error(`error: no such habit: '${name}'. Add it with 'adt habit add ${name}' first.`);
+        process.exit(1);
+      }
+      throw e;
+    }
+  });
+
+habitCmd
+  .command("list")
+  .description("Show today's status for all registered habits")
+  .action(() => {
+    const rows = listHabitsForToday();
+    if (rows.length === 0) {
+      console.log("No habits yet. Add one with: adt habit add <name>");
+      return;
+    }
+    for (const { habit, doneToday } of rows) {
+      const mark = doneToday ? "✅" : "❌";
+      console.log(`${mark} ${habit.name}`);
+    }
   });
 
 program.parse();
