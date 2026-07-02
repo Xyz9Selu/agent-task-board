@@ -138,7 +138,7 @@ async function runWorker(): Promise<void> {
           const slug = slugFromTitle(issue.title);
           const branch = branchName(issue.number, slug);
           const repoPath = process.cwd(); // Assume cwd is the repo clone
-          const wtPath = await ensureWorktree(repoPath, issue.number, branch);
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
           const taskId = insertTask(db, repo, issue.number, "reqs", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;

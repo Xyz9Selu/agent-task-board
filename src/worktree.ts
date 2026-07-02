@@ -14,12 +14,38 @@ function branchName(issueNumber: number, slug: string): string {
   return `adt/issue-${issueNumber}-${slug}`;
 }
 
-async function ensureWorktree(repoPath: string, issueNumber: number, branch: string): Promise<string> {
+async function ensureWorktree(repoPath: string, issueNumber: number, branch: string, githubToken?: string): Promise<string> {
   const git: SimpleGit = createGit(repoPath);
   const wtPath = worktreePath(repoPath, issueNumber);
   const wtDir = worktreesDir(repoPath);
 
   fs.mkdirSync(wtDir, { recursive: true });
+
+  // Rewrite origin to HTTPS-with-token so cc-mm's git push uses the PAT.
+  // Worktrees created via `git worktree add` inherit the parent's remote config,
+  // but if origin is SSH the push will be denied (no SSH key, or wrong key).
+  if (githubToken) {
+    const remotes = await git.getRemotes(true);
+    const origin = remotes.find(r => r.name === "origin");
+    if (origin) {
+      const sshMatch = origin.refs.fetch.match(/git@github\.com:([^/]+)\/(.+?)\.git/);
+      if (sshMatch) {
+        const [, owner, repoName] = sshMatch;
+        const httpsUrl = `https://x-access-token:${githubToken}@github.com/${owner}/${repoName}.git`;
+        await git.removeRemote("origin");
+        await git.addRemote("origin", httpsUrl);
+      } else {
+        // Already HTTPS — rewrite with the token in case it lacks auth
+        const httpsMatch = origin.refs.fetch.match(/https:\/\/github\.com\/([^/]+)\/(.+?)\.git/);
+        if (httpsMatch && !origin.refs.fetch.includes("x-access-token:")) {
+          const [, owner, repoName] = httpsMatch;
+          const httpsUrl = `https://x-access-token:${githubToken}@github.com/${owner}/${repoName}.git`;
+          await git.removeRemote("origin");
+          await git.addRemote("origin", httpsUrl);
+        }
+      }
+    }
+  }
 
   // Check if worktree already exists
   const list = await git.raw("worktree", "list");

@@ -4,12 +4,12 @@ const StageResult = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('waiting-user'),
     summary: z.string(),
-    artifacts: z.record(z.string()).optional(),
+    artifacts: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
   }),
   z.object({
     status: z.literal('done'),
     summary: z.string(),
-    artifacts: z.record(z.string()).optional(),
+    artifacts: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
   }),
   z.object({
     status: z.literal('blocked'),
