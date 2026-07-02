@@ -3,7 +3,7 @@ import { loadConfig, type Config, type Stage, ADT_DIR } from "./config.js";
 import { openDb, listRunnableTasks, markTaskRunning, markTaskFinished, insertTask, getTask, type TaskRow } from "./store.js";
 import { acquireLock, releaseLock } from "./lock.js";
 import { nextStage, labelForStage, LABEL_BLOCKED } from "./labels.js";
-import { createClient, listReadyIssues, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview } from "./github.js";
+import { createClient, listReadyIssues, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview, isPRMerged } from "./github.js";
 import { ensureWorktree, pruneWorktrees, branchName } from "./worktree.js";
 import { spawnCcMm, buildPromptFile, DEFAULT_TOOLS } from "./claude-code.js";
 import * as path from "node:path";
@@ -112,6 +112,60 @@ async function runWorker(): Promise<void> {
       }
     }
 
+    // 5b. Cleanup pass: find review-stage tasks whose PR has been merged
+    {
+      console.log("[cleanup] Starting cleanup pass...");
+      const reviewTasks = db!.prepare(
+        "SELECT * FROM tasks WHERE stage = 'review' AND status IN ('pending', 'running', 'done')"
+      ).all() as TaskRow[];
+      console.log(`[cleanup] Found ${reviewTasks.length} review tasks`);
+      let didCleanup = false;
+      for (const rt of reviewTasks) {
+        console.log(`[cleanup] Task #${rt.issue_number}: status=${rt.status}, repo=${rt.repo}`);
+        const client2 = createClient(config.githubToken);
+        const comments = await withGh("getComments", () => getComments(client2, rt.repo, rt.issue_number));
+        const allText = comments.map(c => c.body).join("\n");
+        console.log(`[cleanup] Got ${comments.length} comments, scanning for PR URLs...`);
+        const prRegex = /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/g;
+        let m: RegExpExecArray | null;
+        let merged = false;
+        const foundPrs: number[] = [];
+        while ((m = prRegex.exec(allText)) !== null) {
+          const prNum = parseInt(m[1], 10);
+          foundPrs.push(prNum);
+          try {
+            const isMerged = await withGh("isPRMerged", () => isPRMerged(client2, rt.repo, prNum));
+            console.log(`[cleanup]   PR #${prNum} merged? ${isMerged}`);
+            if (isMerged) {
+              merged = true;
+              break;
+            }
+          } catch (e) {
+            console.log(`[cleanup]   PR #${prNum} check failed:`, (e as Error).message);
+          }
+        }
+        console.log(`[cleanup] PRs found in comments: ${foundPrs.length > 0 ? foundPrs.join(',') : 'none'}`);
+        if (merged) {
+          console.log(`[cleanup] Task #${rt.issue_number} PR merged -- cleaning up.`);
+          markTaskFinished(db, rt.id, "done");
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, rt.repo, rt.issue_number, "adt:done"));
+          if (rt.worktree_path) {
+            try {
+              const { removeWorktree } = await import("./worktree.js");
+              await removeWorktree(process.cwd(), rt.issue_number);
+              console.log(`[cleanup] Worktree for #${rt.issue_number} removed.`);
+            } catch (e) {
+              console.error(`[cleanup] Worktree cleanup failed for #${rt.issue_number}:`, e);
+            }
+          }
+          didCleanup = true;
+        }
+      }
+      if (didCleanup) {
+        console.log("Cleanup complete.");
+      }
+    }
+
     // 6. List runnable tasks from store
     let task: TaskRow | null = null;
     // First, check for waiting-user tasks that might have been approved
@@ -180,12 +234,8 @@ async function runWorker(): Promise<void> {
       return;
     }
 
-    // 9. Check for merged PR (review stage)
-    if (task.stage === "review") {
-      // If PR was merged or closed, handle cleanup
-      // In v1, we rely on the worker checking the PR status on next run
-      // via listReadyIssues detecting the merged PR
-    }
+    // (Cleanup pass is at step 5b — runs before task selection so merged-PR
+    // tasks don't compete for the queue.)
 
     // 10. Mark running
     markTaskRunning(db, task.id);
