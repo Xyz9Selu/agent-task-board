@@ -20,6 +20,12 @@ while true; do adt run; sleep 60; done
 
 Commands: `adt run`, `adt status`, `adt pause owner/repo#42`, `adt resume owner/repo#42`, `adt clean`.
 
+## Pages
+
+- `/` — landing page with the hero, counter, and links.
+- `/contact` — small contact form (name / email / message). Client-side only;
+  submissions are not stored.
+
 ## How it works
 
 1. Label an Issue `adt:ready`
