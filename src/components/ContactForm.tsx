@@ -31,12 +31,6 @@ export function ContactForm({ onSubmitted }: ContactFormProps) {
   const emailRef = useRef<HTMLInputElement>(null)
   const messageRef = useRef<HTMLTextAreaElement>(null)
 
-  const fieldRefs: Record<ContactFormField, HTMLElement | null> = {
-    name: nameRef.current,
-    email: emailRef.current,
-    message: messageRef.current,
-  }
-
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const next = validateContactForm(values)
@@ -44,7 +38,14 @@ export function ContactForm({ onSubmitted }: ContactFormProps) {
 
     const firstInvalid = CONTACT_FORM_FIELD_ORDER.find((f) => next[f])
     if (firstInvalid) {
-      fieldRefs[firstInvalid]?.focus()
+      // Look up refs at click time — they are null on the first render.
+      const ref =
+        firstInvalid === 'name'
+          ? nameRef
+          : firstInvalid === 'email'
+            ? emailRef
+            : messageRef
+      ref.current?.focus()
       return
     }
 
