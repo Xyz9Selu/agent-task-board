@@ -3,3 +3,5 @@ dist/
 .adt-worktrees/
 *.db
 .claude/
+playwright-report/
+tests/e2e/test-results/
