@@ -23,6 +23,7 @@ const DEFAULT_TOOLS: Record<Stage, string[]> = {
   reqs: ["Bash", "Read", "Write"],
   design: ["Bash", "Read", "Write", "Grep"],
   impl: ["Bash", "Read", "Write", "Grep", "Glob", "Edit", "WebFetch"],
+  verify: ["Bash", "Read", "Write", "Grep", "Glob", "Edit"],
   review: ["Bash", "Read", "Write", "Grep", "Edit"],
 };
 

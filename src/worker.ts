@@ -104,7 +104,7 @@ async function runWorker(): Promise<void> {
     // 5. Reset stuck tasks (running but no longer active from crashed workers)
     {
       const now = Math.floor(Date.now() / 1000);
-      for (const stage of ["reqs", "design", "impl", "review"] as const) {
+      for (const stage of ["reqs", "design", "impl", "verify", "review"] as const) {
         const timeout = config.stageTimeouts[stage];
         const maxAge = 2 * timeout * 60; // 2 * maxDuration in seconds
         const cutoff = now - maxAge;

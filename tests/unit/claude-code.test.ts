@@ -42,8 +42,8 @@ describe("buildPromptFile", () => {
 });
 
 describe("DEFAULT_TOOLS", () => {
-  it("has entries for all 4 stages", () => {
-    for (const s of ["reqs", "design", "impl", "review"]) {
+  it("has entries for all 5 stages", () => {
+    for (const s of ["reqs", "design", "impl", "verify", "review"]) {
       expect(Array.isArray(DEFAULT_TOOLS[s as keyof typeof DEFAULT_TOOLS])).toBe(true);
       expect(DEFAULT_TOOLS[s as keyof typeof DEFAULT_TOOLS].length).toBeGreaterThan(0);
     }

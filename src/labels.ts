@@ -5,6 +5,7 @@ const STAGE_LABELS: Record<Stage, { running: string; waiting: string }> = {
   reqs:  { running: 'adt:reqs-running',  waiting: 'adt:reqs-waiting' },
   design:{ running: 'adt:design-running',waiting: 'adt:design-waiting' },
   impl:  { running: 'adt:impl-running',  waiting: 'adt:impl-waiting' },
+  verify:{ running: 'adt:verify-running',waiting: 'adt:verify-waiting' },
   review:{ running: 'adt:review-running',waiting: 'adt:review-waiting' },
 };
 
@@ -26,14 +27,14 @@ function labelForStage(stage: Stage, status: string): string {
 }
 
 function nextStage(current: Stage): Stage | null {
-  const order: Stage[] = ['grill', 'reqs', 'design', 'impl', 'review'];
+  const order: Stage[] = ['grill', 'reqs', 'design', 'impl', 'verify', 'review'];
   const idx = order.indexOf(current);
   if (idx < 0) return null;
   return idx < order.length - 1 ? order[idx + 1] : null;
 }
 
 function stageFromLabel(label: string): Stage | null {
-  for (const stage of ['reqs', 'design', 'impl', 'review'] as Stage[]) {
+  for (const stage of ['reqs', 'design', 'impl', 'verify', 'review'] as Stage[]) {
     const entry = STAGE_LABELS[stage];
     if (label === entry.running || label === entry.waiting) return stage;
   }

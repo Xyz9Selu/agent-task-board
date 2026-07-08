@@ -6,8 +6,8 @@ import {
 import type { Stage } from '../../src/config.js';
 
 describe('STAGE_LABELS', () => {
-  it('has entries for all 4 stages', () => {
-    const stages: Stage[] = ['reqs', 'design', 'impl', 'review'];
+  it('has entries for all 5 stages', () => {
+    const stages: Stage[] = ['reqs', 'design', 'impl', 'verify', 'review'];
     for (const s of stages) {
       expect(STAGE_LABELS[s]).toBeDefined();
       expect(STAGE_LABELS[s].running).toBe(`adt:${s}-running`);
@@ -30,7 +30,8 @@ describe('labelForStage', () => {
 describe('nextStage', () => {
   it('returns design after reqs', () => expect(nextStage('reqs')).toBe('design'));
   it('returns impl after design', () => expect(nextStage('design')).toBe('impl'));
-  it('returns review after impl', () => expect(nextStage('impl')).toBe('review'));
+  it('returns verify after impl', () => expect(nextStage('impl')).toBe('verify'));
+  it('returns review after verify', () => expect(nextStage('verify')).toBe('review'));
   it('returns null after review', () => expect(nextStage('review')).toBeNull());
 });
 

@@ -50,7 +50,7 @@ program
         githubToken: token,
         repos: [repo],
         ccMmPath: ccMm,
-        stageTimeouts: { grill: 15, reqs: 10, design: 20, impl: 60, review: 30 },
+        stageTimeouts: { grill: 15, reqs: 10, design: 20, impl: 60, verify: 15, review: 30 },
       };
       saveConfig(cfg);
       console.log(`Config saved to ${path.join(adtDir, "config.json")}`);

@@ -17,8 +17,8 @@ afterEach(() => {
   delete process.env.ADT_DIR;
 });
 
-describe("full 4-stage lifecycle", () => {
-  it("walks reqs -> waiting-user -> design -> done -> impl -> done -> review -> done via store", () => {
+describe("full 5-stage lifecycle", () => {
+  it("walks reqs -> waiting-user -> design -> done -> impl -> done -> verify -> done -> review -> done via store", () => {
     const dbPath = path.join(TMP, "state.db");
     const db = openDb(dbPath);
 
@@ -36,6 +36,11 @@ describe("full 4-stage lifecycle", () => {
     markTaskFinished(db, taskId, "pending");
     db.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run("impl", taskId);
     expect(getTask(db, taskId)!.stage).toBe("impl");
+
+    markTaskRunning(db, taskId);
+    markTaskFinished(db, taskId, "pending");
+    db.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run("verify", taskId);
+    expect(getTask(db, taskId)!.stage).toBe("verify");
 
     markTaskRunning(db, taskId);
     markTaskFinished(db, taskId, "pending");
@@ -75,14 +80,15 @@ describe("result parsing", () => {
 });
 
 describe("labels state machine", () => {
-  it("covers all 4 stages", () => {
-    for (const s of ["reqs", "design", "impl", "review"] as const) {
+  it("covers all 5 stages", () => {
+    for (const s of ["reqs", "design", "impl", "verify", "review"] as const) {
       expect(labelForStage(s, "running")).toBe("adt:" + s + "-running");
       expect(labelForStage(s, "waiting-user")).toBe("adt:" + s + "-waiting");
     }
     expect(nextStage("reqs")).toBe("design");
     expect(nextStage("design")).toBe("impl");
-    expect(nextStage("impl")).toBe("review");
+    expect(nextStage("impl")).toBe("verify");
+    expect(nextStage("verify")).toBe("review");
     expect(nextStage("review")).toBeNull();
   });
 });
