@@ -15,6 +15,7 @@ import {
 import * as path from "node:path";
 import * as os from "node:os";
 import { createInterface } from "node:readline";
+import { runDoctor } from "./doctor.js";
 
 const program = new Command();
 
@@ -144,6 +145,13 @@ program
       .run("pending", repo, issueNumber, "cancelled");
     db.close();
     console.log(`Resumed ${taskRef}`);
+  });
+
+program
+  .command("doctor")
+  .description("Validate local config and runtime (read-only)")
+  .action(async () => {
+    process.exit(await runDoctor());
   });
 
 const habitCmd = program

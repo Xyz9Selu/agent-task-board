@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { loadConfig, type Config, type Stage, ADT_DIR } from "./config.js";
+import { loadConfig, resolveToken, type Config, type Stage, ADT_DIR } from "./config.js";
 import { openDb, listRunnableTasks, markTaskRunning, markTaskFinished, insertTask, getTask, type TaskRow } from "./store.js";
 import { acquireLock, releaseLock } from "./lock.js";
 import { nextStage, labelForStage, LABEL_BLOCKED } from "./labels.js";
@@ -122,7 +122,7 @@ async function runWorker(): Promise<void> {
       let didCleanup = false;
       for (const rt of reviewTasks) {
         console.log(`[cleanup] Task #${rt.issue_number}: status=${rt.status}, repo=${rt.repo}`);
-        const client2 = createClient(config.githubToken);
+        const client2 = createClient(resolveToken(config) ?? "");
         const comments = await withGh("getComments", () => getComments(client2, rt.repo, rt.issue_number));
         const allText = comments.map(c => c.body).join("\n");
         console.log(`[cleanup] Got ${comments.length} comments, scanning for PR URLs...`);
@@ -188,7 +188,7 @@ async function runWorker(): Promise<void> {
 
     // 7. If nothing in store, scan GitHub for new adt:ready issues
     if (!task) {
-      const client = createClient(config.githubToken);
+      const client = createClient(resolveToken(config) ?? "");
       for (const repo of config.repos) {
         // First scan for adt:grill (highest priority — exploratory needs)
         const grillIssues = await withGh("listIssuesByLabel", () => listIssuesByLabel(client, repo, "adt:grill"));
@@ -197,7 +197,7 @@ async function runWorker(): Promise<void> {
           const slug = slugFromTitle(issue.title);
           const branch = branchName(issue.number, slug);
           const repoPath = process.cwd();
-          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, resolveToken(config) ?? "");
           const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;
@@ -209,7 +209,7 @@ async function runWorker(): Promise<void> {
           const slug = slugFromTitle(issue.title);
           const branch = branchName(issue.number, slug);
           const repoPath = process.cwd();
-          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, resolveToken(config) ?? "");
           const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;
@@ -226,7 +226,7 @@ async function runWorker(): Promise<void> {
     if (task && task.status === "waiting-user" && !skipWaitingUserCheck) {
       const waitingTask: TaskRow = task;
       if (waitingTask.stage === "design") {
-        const client = createClient(config.githubToken);
+        const client = createClient(resolveToken(config) ?? "");
         const approved = await checkApproval(client, waitingTask.repo, waitingTask.issue_number, waitingTask.stage);
         if (!approved) {
           console.log(`Task #${waitingTask.issue_number} is waiting for design approval.`);
@@ -238,7 +238,7 @@ async function runWorker(): Promise<void> {
           markTaskFinished(db, waitingTask.id, "pending");
           db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, waitingTask.id);
           const label = labelForStage(next, "running");
-          const client2 = createClient(config.githubToken);
+          const client2 = createClient(resolveToken(config) ?? "");
           await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, waitingTask.repo, waitingTask.issue_number, label));
           await withGh("postComment", () => postComment(client2, waitingTask.repo, waitingTask.issue_number,
             `## adt: design approved\\n\\nDesign has been approved. Proceeding to implementation.`));
@@ -248,7 +248,7 @@ async function runWorker(): Promise<void> {
       // For reqs waiting-user, check if user has replied (any non-bot comment
       // after the last waiting-user comment). If so, advance to design.
       if (waitingTask.stage === "reqs") {
-        const client = createClient(config.githubToken);
+        const client = createClient(resolveToken(config) ?? "");
         const comments = await withGh("getComments", () => getComments(client, waitingTask.repo, waitingTask.issue_number));
         // Find the last "## adt: reqs" comment (the PM's waiting-user marker)
         let lastAdtIdx = -1;
@@ -270,7 +270,7 @@ async function runWorker(): Promise<void> {
             markTaskFinished(db, waitingTask.id, "pending");
             db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run(next, waitingTask.id);
             const label = labelForStage(next, "running");
-            const client2 = createClient(config.githubToken);
+            const client2 = createClient(resolveToken(config) ?? "");
             await withGh("replaceAdtLabel", () => replaceAdtLabel(client2, waitingTask.repo, waitingTask.issue_number, label));
             await withGh("postComment", () => postComment(client2, waitingTask.repo, waitingTask.issue_number,
               `## adt: reqs complete (user replied)\\n\\nProceeding to ${next}.`));
@@ -286,7 +286,7 @@ async function runWorker(): Promise<void> {
 
     if (fallThroughToGitHub) {
       // Reset task to null and re-run the GitHub scan block
-      const client = createClient(config.githubToken);
+      const client = createClient(resolveToken(config) ?? "");
       for (const repo of config.repos) {
         const issues = await withGh("listReadyIssues", () => listReadyIssues(client, repo));
         if (issues.length > 0) {
@@ -294,7 +294,7 @@ async function runWorker(): Promise<void> {
           const slug = slugFromTitle(issue.title);
           const branch = branchName(issue.number, slug);
           const repoPath = process.cwd();
-          const wtPath = await ensureWorktree(repoPath, issue.number, branch, config.githubToken);
+          const wtPath = await ensureWorktree(repoPath, issue.number, branch, resolveToken(config) ?? "");
           const taskId = insertTask(db, repo, issue.number, "grill", "pending", wtPath, branch);
           task = getTask(db, taskId);
           break;
@@ -313,7 +313,7 @@ async function runWorker(): Promise<void> {
     markTaskRunning(db, task.id);
 
     // 11. Get issue data from GitHub
-    const client = createClient(config.githubToken);
+    const client = createClient(resolveToken(config) ?? "");
     const issue = await withGh("getIssue", () => getIssue(client, task.repo, task.issue_number));
     const comments = await withGh("getComments", () => getComments(client, task.repo, task.issue_number));
 
@@ -342,7 +342,7 @@ async function runWorker(): Promise<void> {
       promptFile,
       maxDuration: timeout,
       allowedTools: tools,
-      env: { GH_TOKEN: config.githubToken },
+      env: { GH_TOKEN: resolveToken(config) ?? "" },
     };
     let result = await spawnCcMm(spawnOpts);
 
