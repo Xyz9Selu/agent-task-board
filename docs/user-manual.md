@@ -95,6 +95,7 @@ Each `adt run` advances exactly one task by one stage. If a stage needs your inp
 | `adt habit add <name>` | Register a habit for daily tracking (idempotent) |
 | `adt habit done <name>` | Mark a habit done for today (idempotent same-day) |
 | `adt habit list` | Show today's status for all registered habits |
+| `adt doctor` | Validate local config and runtime (read-only) |
 
 ## How to interact during a task
 
@@ -256,3 +257,45 @@ Data lives in `~/.adt/habits.json` and looks like:
 ```
 
 "Today" is your local date (`YYYY-MM-DD`), so marking a habit done at 11pm counts for today even if UTC has already rolled over. `done` exits non-zero if the habit isn't registered (run `add` first). v1 is intentionally minimal — no streaks, no reminders, no history views.
+
+## adt doctor
+
+`adt doctor` is a read-only health check for your local setup. It runs five checks and prints a pass/fail table, exiting 0 when everything is healthy and 1 otherwise.
+
+```bash
+adt doctor            # human-readable text (default)
+adt doctor --human    # explicit alias for the default
+adt doctor --json     # structured JSON, suitable for jq / CI
+```
+
+Checks (in order):
+
+- **config** — `~/.adt/config.json` exists, parses as JSON, and has the required fields (`githubToken`, `repos[]`).
+- **token** — the resolved GitHub token (env-first: `GITHUB_TOKEN`, then `GH_TOKEN`, then `config.githubToken`) authenticates against GitHub. This matches what `adt run` actually uses.
+- **repos** — each entry in `config.repos[]` is reachable on GitHub (per-repo pass/fail shown).
+- **ccMm** — the `ccMmPath` resolves to an executable. A bare command name is looked up on `PATH`; an explicit `/`-path is checked directly.
+- **labels** — the full set of `adt:*` labels exists on at least one configured repo (per-repo coverage shown).
+
+`doctor` is safe to run before `setup` — a missing config file just fails the `config` check, and the other checks still run (token from env, `ccMm` from `PATH`, labels skipped). It makes no filesystem or GitHub changes.
+
+### JSON output
+
+`--json` prints a single pretty-printed JSON document on stdout and is safe to pipe into `jq`. The shape is:
+
+```json
+{
+  "ok": false,
+  "exitCode": 1,
+  "checks": [
+    { "name": "config", "ok": true,  "detail": null,        "subItems": null },
+    { "name": "token",  "ok": false, "detail": "...",       "subItems": null },
+    { "name": "repos",  "ok": false, "detail": "1 of 2 repos unreachable",
+      "subItems": ["✓ owner/one", "✗ owner/two — repo not found or no access (404)"] }
+  ]
+}
+```
+
+- `ok` and `exitCode` describe the overall outcome (0 = all checks passed, 1 = at least one failed).
+- `checks[]` always contains exactly five entries in this order: `config`, `token`, `repos`, `ccMm`, `labels`.
+- `detail` is a one-line explanation on failure, `null` on success.
+- `subItems` is `null` when the check has no per-repo breakdown, otherwise an array of `✓`/`✗` lines.
