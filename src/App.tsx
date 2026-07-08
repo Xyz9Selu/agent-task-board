@@ -1,16 +1,22 @@
 import { useState } from 'react'
+import { Route, Routes } from 'react-router-dom'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import { Header } from './components/Header'
+import { HabitsPage } from './components/habits/HabitsPage'
 import './App.css'
 
-function App() {
+/**
+ * Home page — the original counter + Vite/React showcase content. Lifted
+ * out of `App` so the router can mount it at `/` without dragging the
+ * `/habits` route's lazy concerns into this file.
+ */
+function Home() {
   const [count, setCount] = useState(0)
 
   return (
     <>
-      <Header />
       <section id="center">
         <div className="hero">
           <img src={heroImg} className="base" width="170" height="179" alt="" />
@@ -117,6 +123,18 @@ function App() {
 
       <div className="ticks"></div>
       <section id="spacer"></section>
+    </>
+  )
+}
+
+function App() {
+  return (
+    <>
+      <Header />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/habits" element={<HabitsPage />} />
+      </Routes>
     </>
   )
 }
