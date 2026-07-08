@@ -247,23 +247,42 @@ async function checkLabels(cfg: Config | null): Promise<CheckResult> {
 
 // ---- runner ----------------------------------------------------------------
 
-async function runDoctor(): Promise<number> {
+// Structured report returned by collectReport and rendered by either printer.
+interface DoctorReport {
+  ok: boolean;
+  exitCode: number;
+  checks: CheckResult[];
+}
+
+// Collect every check's result without printing. The runner then renders the
+// report in the requested format. Splitting collection from rendering keeps
+// the JSON path deterministic (one JSON document on stdout) and makes the
+// report trivially testable.
+async function collectReport(): Promise<DoctorReport> {
   const cfgResult = tryReadConfig();
   const cfg: Config | null = cfgResult.ok ? cfgResult.config : null;
 
   // Run the checks. Most are independent — but the config check feeds into
   // every other check, so we share the parsed config across them. The repo
   // and label checks are already parallelized internally via Promise.all.
-  const results: CheckResult[] = [];
-  results.push(await checkConfig());
-  results.push(await checkToken(cfg));
-  results.push(await checkRepos(cfg));
-  results.push(await checkCcMm(cfg));
-  results.push(await checkLabels(cfg));
+  const checks: CheckResult[] = [];
+  checks.push(await checkConfig());
+  checks.push(await checkToken(cfg));
+  checks.push(await checkRepos(cfg));
+  checks.push(await checkCcMm(cfg));
+  checks.push(await checkLabels(cfg));
 
-  // Print table
-  const nameWidth = Math.max(...results.map(r => r.name.length));
-  for (const r of results) {
+  const allOk = checks.every(r => r.ok);
+  return {
+    ok: allOk,
+    exitCode: allOk ? 0 : 1,
+    checks,
+  };
+}
+
+function printHuman(report: DoctorReport): void {
+  const nameWidth = Math.max(...report.checks.map(r => r.name.length));
+  for (const r of report.checks) {
     const mark = r.ok ? '✓' : '✗';
     const label = r.ok ? 'ok' : (r.detail ?? 'failed');
     console.log(`${mark} ${r.name.padEnd(nameWidth)}  ${label}`);
@@ -271,14 +290,39 @@ async function runDoctor(): Promise<number> {
       for (const s of r.subItems) console.log(`    ${s}`);
     }
   }
-  const allOk = results.every(r => r.ok);
   console.log('');
-  console.log(allOk ? 'All checks passed.' : 'Some checks failed. See above.');
-  return allOk ? 0 : 1;
+  console.log(report.ok ? 'All checks passed.' : 'Some checks failed. See above.');
+}
+
+function printJson(report: DoctorReport): void {
+  // Single JSON document on stdout, pretty-printed for human inspection but
+  // still stable enough to pipe through `jq`. Exit code is included so a
+  // caller can recover the run's outcome from stdout alone.
+  console.log(JSON.stringify(report, null, 2));
+}
+
+type Format = 'json' | 'human';
+
+interface RunDoctorOptions {
+  format?: Format;
+}
+
+async function runDoctor(opts: RunDoctorOptions = {}): Promise<number> {
+  const format: Format = opts.format ?? 'human';
+  const report = await collectReport();
+  if (format === 'json') {
+    printJson(report);
+  } else {
+    printHuman(report);
+  }
+  return report.exitCode;
 }
 
 export {
   runDoctor,
+  collectReport,
+  printHuman,
+  printJson,
   checkConfig, checkToken, checkRepos, checkCcMm, checkLabels,
-  CheckResult,
+  CheckResult, DoctorReport, Format, RunDoctorOptions,
 };

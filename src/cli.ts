@@ -150,8 +150,14 @@ program
 program
   .command("doctor")
   .description("Validate local config and runtime (read-only)")
-  .action(async () => {
-    process.exit(await runDoctor());
+  .option("--json", "Print the report as structured JSON")
+  .option("--human", "Print the report in human-readable text (default)")
+  .action(async (opts: { json?: boolean; human?: boolean }) => {
+    // --json wins over --human; default is human. Passing both is allowed
+    // and resolves to whichever appears last would be confusing — so we
+    // treat --json as the explicit override and otherwise stay human.
+    const format: "json" | "human" = opts.json ? "json" : "human";
+    process.exit(await runDoctor({ format }));
   });
 
 const habitCmd = program

@@ -444,4 +444,112 @@ describe('runDoctor', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('defaults to human output when no format option is provided', async () => {
+    const labels = await import('../../src/labels.js');
+    const allLabels = labels.ALL_ADT_LABELS.map(name => ({ name }));
+
+    writeConfig({ ccMmPath: '/bin/true' });
+    nock(BASE).get('/user').reply(200, { login: 'octocat' });
+    nock(BASE).get('/repos/owner/repo').reply(200, { full_name: 'owner/repo' });
+    nock(BASE)
+      .get('/repos/owner/repo/labels')
+      .query(true)
+      .reply(200, allLabels);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runDoctor();
+      const allLines = logSpy.mock.calls.map(c => c[0]).join('\n');
+      // Human output uses ✓/✗ and the "All checks passed." trailing line.
+      // A JSON document would not contain either of those.
+      expect(allLines).toMatch(/[✓✗]/);
+      expect(allLines).toMatch(/All checks passed\./);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe('runDoctor JSON output', () => {
+  it('prints a single parseable JSON document with ok/exitCode/checks', async () => {
+    const labels = await import('../../src/labels.js');
+    const allLabels = labels.ALL_ADT_LABELS.map(name => ({ name }));
+
+    writeConfig({ ccMmPath: '/bin/true' });
+    nock(BASE).get('/user').reply(200, { login: 'octocat' });
+    nock(BASE).get('/repos/owner/repo').reply(200, { full_name: 'owner/repo' });
+    nock(BASE)
+      .get('/repos/owner/repo/labels')
+      .query(true)
+      .reply(200, allLabels);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const code = await runDoctor({ format: 'json' });
+      expect(code).toBe(0);
+
+      // Exactly one line of stdout — the JSON document.
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const [jsonLine] = logSpy.mock.calls[0];
+      const report = JSON.parse(jsonLine as string);
+
+      expect(report.ok).toBe(true);
+      expect(report.exitCode).toBe(0);
+      expect(Array.isArray(report.checks)).toBe(true);
+      expect(report.checks).toHaveLength(5);
+      const names = report.checks.map((c: any) => c.name);
+      expect(names).toEqual(['config', 'token', 'repos', 'ccMm', 'labels']);
+      // Every check should be ok in this scenario
+      for (const c of report.checks) {
+        expect(c.ok).toBe(true);
+      }
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('reflects failures in JSON output with ok:false and exitCode:1', async () => {
+    writeConfig({ ccMmPath: '/bin/true' });
+    nock(BASE).get('/user').reply(200, { login: 'octocat' });
+    nock(BASE).get('/repos/owner/repo').reply(404, { message: 'Not Found' });
+    nock(BASE)
+      .get('/repos/owner/repo/labels')
+      .query(true)
+      .reply(200, []);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const code = await runDoctor({ format: 'json' });
+      expect(code).toBe(1);
+
+      const [jsonLine] = logSpy.mock.calls[0];
+      const report = JSON.parse(jsonLine as string);
+
+      expect(report.ok).toBe(false);
+      expect(report.exitCode).toBe(1);
+      const reposCheck = report.checks.find((c: any) => c.name === 'repos');
+      expect(reposCheck).toBeDefined();
+      expect(reposCheck.ok).toBe(false);
+      expect(reposCheck.detail).toMatch(/unreachable/);
+      expect(Array.isArray(reposCheck.subItems)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('does not print the human-readable trailing lines in JSON mode', async () => {
+    fs.rmSync(testDir, { recursive: true, force: true });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const code = await runDoctor({ format: 'json' });
+      expect(code).toBe(1);
+      const allLines = logSpy.mock.calls.map(c => c[0]).join('\n');
+      // Human-mode phrases must not leak into JSON output
+      expect(allLines).not.toMatch(/All checks passed\./);
+      expect(allLines).not.toMatch(/Some checks failed\./);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });

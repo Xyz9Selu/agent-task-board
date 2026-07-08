@@ -263,7 +263,9 @@ Data lives in `~/.adt/habits.json` and looks like:
 `adt doctor` is a read-only health check for your local setup. It runs five checks and prints a pass/fail table, exiting 0 when everything is healthy and 1 otherwise.
 
 ```bash
-adt doctor
+adt doctor            # human-readable text (default)
+adt doctor --human    # explicit alias for the default
+adt doctor --json     # structured JSON, suitable for jq / CI
 ```
 
 Checks (in order):
@@ -275,3 +277,25 @@ Checks (in order):
 - **labels** — the full set of `adt:*` labels exists on at least one configured repo (per-repo coverage shown).
 
 `doctor` is safe to run before `setup` — a missing config file just fails the `config` check, and the other checks still run (token from env, `ccMm` from `PATH`, labels skipped). It makes no filesystem or GitHub changes.
+
+### JSON output
+
+`--json` prints a single pretty-printed JSON document on stdout and is safe to pipe into `jq`. The shape is:
+
+```json
+{
+  "ok": false,
+  "exitCode": 1,
+  "checks": [
+    { "name": "config", "ok": true,  "detail": null,        "subItems": null },
+    { "name": "token",  "ok": false, "detail": "...",       "subItems": null },
+    { "name": "repos",  "ok": false, "detail": "1 of 2 repos unreachable",
+      "subItems": ["✓ owner/one", "✗ owner/two — repo not found or no access (404)"] }
+  ]
+}
+```
+
+- `ok` and `exitCode` describe the overall outcome (0 = all checks passed, 1 = at least one failed).
+- `checks[]` always contains exactly five entries in this order: `config`, `token`, `repos`, `ccMm`, `labels`.
+- `detail` is a one-line explanation on failure, `null` on success.
+- `subItems` is `null` when the check has no per-repo breakdown, otherwise an array of `✓`/`✗` lines.
