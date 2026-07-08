@@ -33,6 +33,7 @@ function buildPromptFile(
   comments: { id: number; body: string; user: { login: string } | null }[],
   stage: Stage,
   branchName: string,
+  prFeedback?: { id: number; body: string; user: { login: string } | null; created_at?: string }[],
 ): string {
   const ctxDir = path.join(worktreePath, ".adt");
   fs.mkdirSync(ctxDir, { recursive: true });
@@ -44,6 +45,9 @@ function buildPromptFile(
   fs.writeFileSync(path.join(ctxDir, "branch.txt"), branchName);
 
   // Write the prompt that tells cc-mm what to do
+  const reworkHint = stage === "impl" && prFeedback && prFeedback.length > 0
+    ? `\nThis is a REWORK run — the previous PR was reviewed and the user requested changes. Read .adt/pr_feedback.json for the feedback (newest first). Address every item before considering the work done.\n`
+    : "";
   const stageHint = stage === "grill"
     ? `This is the GRILL stage — the Issue body is a rough idea. Your goal: sharpen the requirement via Socratic questioning, using the \`grill-with-docs\` skill. After each exchange, post your questions or progress to the Issue as a comment (using \`gh issue comment\`), then write your result JSON.
 
@@ -62,7 +66,7 @@ Context files are at:
   .adt/stage.txt      — the current stage name
   .adt/branch.txt     — the git branch name for this task
 
-${stageHint}
+${stageHint}${reworkHint}
 
 Execute the stage, then write the result JSON to .adt/${stage}-result.json matching this schema:
 
@@ -79,6 +83,13 @@ You MUST write valid JSON. Exit code 0 on success.
 
   const promptPath = path.join(ctxDir, "prompt.md");
   fs.writeFileSync(promptPath, prompt);
+
+  // Persist PR feedback as a separate context file so the impl agent can
+  // reference it via Read. Only written when present (rework runs).
+  if (prFeedback && prFeedback.length > 0) {
+    fs.writeFileSync(path.join(ctxDir, "pr_feedback.json"), JSON.stringify(prFeedback, null, 2));
+  }
+
   return promptPath;
 }
 

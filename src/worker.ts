@@ -3,7 +3,7 @@ import { loadConfig, type Config, type Stage, ADT_DIR } from "./config.js";
 import { openDb, listRunnableTasks, markTaskRunning, markTaskFinished, insertTask, getTask, type TaskRow } from "./store.js";
 import { acquireLock, releaseLock } from "./lock.js";
 import { nextStage, labelForStage, LABEL_BLOCKED } from "./labels.js";
-import { createClient, listReadyIssues, listIssuesByLabel, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview, isPRMerged } from "./github.js";
+import { createClient, listReadyIssues, listIssuesByLabel, getIssue, getComments, postComment, replaceAdtLabel, hasApprovedReview, isPRMerged, listPRComments, hasChangesRequestedReview, getPRNumberFromReviewResult } from "./github.js";
 import { ensureWorktree, pruneWorktrees, branchName } from "./worktree.js";
 import { spawnCcMm, buildPromptFile, DEFAULT_TOOLS } from "./claude-code.js";
 import * as path from "node:path";
@@ -15,6 +15,27 @@ function slugFromTitle(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 50);
+}
+
+// Pure decision function for the review-stage dual gate. Extracted so it
+// can be unit-tested without spinning up the database, GitHub client, or
+// filesystem. Given the PR conversation comments (already filtered to those
+// AFTER the last "## adt: review" marker and excluding bot authors) plus the
+// two PR-review booleans, returns one of:
+//   "approve" — task → merge-ready (done)
+//   "rework"  — task → impl (pending), feedback persisted
+//   null      — keep waiting
+// Approve wins over rework when both signals are present.
+function decideReviewGate(
+  newComments: { body: string; user: { login: string } | null }[],
+  hasApproval: boolean,
+  hasRejection: boolean,
+): "approve" | "rework" | null {
+  const approveCmd = newComments.some(c => /^\/adt-approve(\s.*)?$/im.test(c.body));
+  const reworkCmd = newComments.some(c => /^\/adt-rework\b/im.test(c.body));
+  if (approveCmd || hasApproval) return "approve";
+  if (reworkCmd || hasRejection) return "rework";
+  return null;
 }
 
 // GitHub retry helper: retries 5xx up to 3 times (1s/2s/4s), bails on 401
@@ -116,7 +137,9 @@ async function runWorker(): Promise<void> {
     {
       console.log("[cleanup] Starting cleanup pass...");
       const reviewTasks = db!.prepare(
-        "SELECT * FROM tasks WHERE stage = 'review' AND status IN ('pending', 'running', 'done')"
+        // Include waiting-user so a user who merged the PR without leaving
+        // an /adt-approve comment still gets the task cleaned up.
+        "SELECT * FROM tasks WHERE stage = 'review' AND status IN ('pending', 'running', 'done', 'waiting-user')"
       ).all() as TaskRow[];
       console.log(`[cleanup] Found ${reviewTasks.length} review tasks`);
       let didCleanup = false;
@@ -277,6 +300,64 @@ async function runWorker(): Promise<void> {
             return; // We did work, return; next run picks up design stage
           }
         }
+      } else if (waitingTask.stage === "review") {
+        // PR is open. Scan PR comments + PR reviews for approve / rework signals.
+        const client = createClient(config.githubToken);
+        const prNumber = getPRNumberFromReviewResult(waitingTask.worktree_path!);
+        if (prNumber == null) {
+          console.log(`Task #${waitingTask.issue_number} (review): no PR URL found in .adt/review-result.json, keeping waiting.`);
+          return;
+        }
+        const [prComments, hasApproval, hasRejection] = await Promise.all([
+          withGh("listPRComments", () => listPRComments(client, waitingTask.repo, prNumber)),
+          withGh("hasApprovedReview", () => hasApprovedReview(client, waitingTask.repo, prNumber)),
+          withGh("hasChangesRequestedReview", () => hasChangesRequestedReview(client, waitingTask.repo, prNumber)),
+        ]);
+
+        // Find the last "## adt: review" marker comment (the worker's posting
+        // when it opened the PR). Only comments AFTER that marker count as new
+        // user signals — anything before is history.
+        let lastAdtIdx = -1;
+        for (let i = 0; i < prComments.length; i++) {
+          if (/^## adt: review\b/m.test(prComments[i].body)) lastAdtIdx = i;
+        }
+        const newComments = prComments.slice(lastAdtIdx + 1).filter(c =>
+          c.user && c.user.login && c.user.login !== "github-actions[bot]"
+        );
+
+        const decision = decideReviewGate(newComments, hasApproval, hasRejection);
+
+        // Approve wins over rework if both signals are present.
+        if (decision === "approve") {
+          markTaskFinished(db, waitingTask.id, "done");
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client, waitingTask.repo, waitingTask.issue_number, "adt:merge-ready"));
+          await withGh("postComment", () => postComment(client, waitingTask.repo, waitingTask.issue_number,
+            `## adt: review approved\n\nPR is approved. Ready for merge.`));
+          return;
+        }
+        if (decision === "rework") {
+          // Persist new PR comments so the next impl run reads them.
+          // Synthetic entry when the signal is a CHANGES_REQUESTED review
+          // (no conversational comment to forward).
+          const feedback = newComments.length > 0
+            ? newComments
+            : [{ id: 0, body: "_No conversational comment — user requested changes via PR review state (CHANGES_REQUESTED)._", user: { login: "github-actions[bot]" }, created_at: new Date().toISOString() }];
+          const adtDir = path.join(waitingTask.worktree_path!, ".adt");
+          fs.mkdirSync(adtDir, { recursive: true });
+          fs.writeFileSync(path.join(adtDir, "pr_feedback.json"), JSON.stringify(feedback, null, 2));
+
+          markTaskFinished(db, waitingTask.id, "pending");
+          // Rework → back to impl. Verify and review will run again after.
+          db!.prepare("UPDATE tasks SET stage = ? WHERE id = ?").run("impl", waitingTask.id);
+          const label = labelForStage("impl", "running");
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client, waitingTask.repo, waitingTask.issue_number, label));
+          await withGh("postComment", () => postComment(client, waitingTask.repo, waitingTask.issue_number,
+            `## adt: rework requested\n\nRouting back to impl. PR feedback saved to .adt/pr_feedback.json in the worktree.\n\nNext run will pick up the rework.`));
+          return; // Next worker run picks up impl
+        }
+        // No signal yet — keep waiting.
+        console.log(`Task #${waitingTask.issue_number} (review): PR #${prNumber} open, no approve/rework signal yet.`);
+        return;
       } else {
         // Other stages waiting-user: skip
         console.log(`Task #${waitingTask.issue_number} is waiting for user input (${waitingTask.stage}).`);
@@ -326,12 +407,25 @@ async function runWorker(): Promise<void> {
 
     // 12. Build prompt and context
     const wtPath = task.worktree_path!;
+    // Rework runs leave pr_feedback.json in the worktree. Feed it into the
+    // impl agent so the previous PR review isn't lost between stages.
+    let prFeedback: { id: number; body: string; user: { login: string } | null; created_at?: string }[] | undefined;
+    if (task.stage === "impl") {
+      const fbPath = path.join(wtPath, ".adt", "pr_feedback.json");
+      if (fs.existsSync(fbPath)) {
+        try {
+          prFeedback = JSON.parse(fs.readFileSync(fbPath, "utf-8"));
+        } catch (_) {
+          prFeedback = undefined;
+        }
+      }
+    }
     const promptFile = buildPromptFile(wtPath, {
       number: issue.number,
       title: issue.title,
       body: issue.body,
       repo: task.repo,
-    }, comments, task.stage, task.branch!);
+    }, comments, task.stage, task.branch!, prFeedback);
 
     // 13. Spawn cc-mm
     const timeout = config.stageTimeouts[task.stage] || 30;
@@ -391,11 +485,25 @@ async function runWorker(): Promise<void> {
           await withGh("postComment", () => postComment(client, task.repo, task.issue_number, `## adt: ${task.stage} complete\n\n${stageResult.summary}\n\nProceeding to ${next}.`));
           await withGh("replaceAdtLabel", () => replaceAdtLabel(client, task.repo, task.issue_number, label));
         } else {
-          // Review done, check for PR and mark merge-ready
-          markTaskFinished(db, task.id, "done");
-          // Check for open PR via comments to detect PR number
-          await withGh("replaceAdtLabel", () => replaceAdtLabel(client, task.repo, task.issue_number, "adt:merge-ready"));
-          await withGh("postComment", () => postComment(client, task.repo, task.issue_number, `## adt: review complete\n\n${stageResult.summary}\n\nPR is ready for merge.`));
+          // Review done — review is the terminal stage. Don't auto-merge:
+          // hand the task to the dual gate. Look up the PR number from
+          // .adt/review-result.json (the review agent wrote it there).
+          const prNumber = getPRNumberFromReviewResult(wtPath);
+          markTaskFinished(db, task.id, "waiting-user");
+          const reviewWaitingLabel = labelForStage("review", "waiting-user");
+          if (prNumber != null) {
+            await withGh("postComment", () => postComment(client, task.repo, task.issue_number,
+              `## adt: review complete\n\n${stageResult.summary}\n\n**PR #${prNumber} is open for review.** Reply with \`/adt-approve\` to merge, \`/adt-rework [reason]\` to route back to impl, or leave a discussion comment.`));
+          } else {
+            // Fallback: review didn't record a PR URL (shouldn't happen, but
+            // keep the pipeline moving instead of stranding the task).
+            console.log(`Task #${task.issue_number} (review): no PR URL in .adt/review-result.json, falling back to direct merge-ready.`);
+            markTaskFinished(db, task.id, "done");
+            await withGh("replaceAdtLabel", () => replaceAdtLabel(client, task.repo, task.issue_number, "adt:merge-ready"));
+            await withGh("postComment", () => postComment(client, task.repo, task.issue_number, `## adt: review complete\n\n${stageResult.summary}\n\nPR is ready for merge.`));
+            break;
+          }
+          await withGh("replaceAdtLabel", () => replaceAdtLabel(client, task.repo, task.issue_number, reviewWaitingLabel));
         }
         break;
       }
@@ -419,4 +527,4 @@ async function runWorker(): Promise<void> {
   }
 }
 
-export { runWorker };
+export { runWorker, decideReviewGate };

@@ -1,4 +1,6 @@
 import { Octokit } from "@octokit/rest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { ALL_ADT_LABELS } from "./labels.js";
 
 type OctokitClient = Octokit;
@@ -113,8 +115,42 @@ async function hasApprovedReview(client: OctokitClient, repo: string, prNumber: 
   return data.some((r: any) => r.state === "APPROVED");
 }
 
+// PR conversation comments share the issue endpoint — listComments with
+// issue_number = prNumber returns the same conversation thread the user sees
+// in the PR's "Conversation" tab.
+async function listPRComments(client: OctokitClient, repo: string, prNumber: number): Promise<GhComment[]> {
+  const [owner, name] = repo.split("/");
+  const { data } = await client.rest.issues.listComments({ owner, repo: name, issue_number: prNumber, per_page: 100 });
+  return data as GhComment[];
+}
+
+async function hasChangesRequestedReview(client: OctokitClient, repo: string, prNumber: number): Promise<boolean> {
+  const [owner, name] = repo.split("/");
+  const { data } = await client.rest.pulls.listReviews({ owner, repo: name, pull_number: prNumber, per_page: 100 });
+  return data.some((r: any) => r.state === "CHANGES_REQUESTED");
+}
+
+// Read the PR URL out of the worktree's review-result.json so the worker can
+// find the PR number without scanning issue comments. Returns null if the
+// file is missing, malformed, or has no artifacts.prUrl.
+function getPRNumberFromReviewResult(worktreePath: string): number | null {
+  const resultPath = path.join(worktreePath, ".adt", "review-result.json");
+  if (!fs.existsSync(resultPath)) return null;
+  try {
+    const raw = fs.readFileSync(resultPath, "utf-8");
+    const obj = JSON.parse(raw);
+    const prUrl: string | undefined = obj?.artifacts?.prUrl;
+    if (typeof prUrl !== "string") return null;
+    const m = /\/pull\/(\d+)/.exec(prUrl);
+    return m ? parseInt(m[1], 10) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export {
   createClient, listReadyIssues, listIssuesByLabel, getIssue, getComments,
   postComment, replaceAdtLabel, getPR, isPRMerged, isPRClosed, hasApprovedReview,
+  listPRComments, hasChangesRequestedReview, getPRNumberFromReviewResult,
   OctokitClient, GhIssue, GhComment, GhPR, GhReview,
 };

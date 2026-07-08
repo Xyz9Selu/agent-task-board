@@ -3,6 +3,7 @@ import nock from "nock";
 import {
   createClient, listReadyIssues, getIssue, getComments,
   postComment, replaceAdtLabel, isPRMerged, isPRClosed, hasApprovedReview, getPR,
+  listPRComments, hasChangesRequestedReview, getPRNumberFromReviewResult,
 } from "../../src/github.js";
 
 const BASE = "https://api.github.com";
@@ -198,6 +199,103 @@ describe("github module (nock)", () => {
         .query({ per_page: 100 })
         .reply(200, []);
       expect(await hasApprovedReview(client, "owner/repo", 99)).toBe(false);
+    });
+  });
+
+  describe("listPRComments", () => {
+    it("fetches PR conversation comments via the issue endpoint", async () => {
+      nock(BASE)
+        .get("/repos/owner/repo/issues/22/comments")
+        .query({ per_page: 100 })
+        .reply(200, [
+          { id: 1, body: "first", created_at: "2026-01-01T00:00:00Z", user: { login: "user1" } },
+          { id: 2, body: "/adt-approve", created_at: "2026-01-02T00:00:00Z", user: { login: "user2" } },
+        ]);
+      const comments = await listPRComments(client, "owner/repo", 22);
+      expect(comments).toHaveLength(2);
+      expect(comments[1].body).toBe("/adt-approve");
+    });
+
+    it("returns empty array when no PR conversation comments", async () => {
+      nock(BASE)
+        .get("/repos/owner/repo/issues/22/comments")
+        .query({ per_page: 100 })
+        .reply(200, []);
+      expect(await listPRComments(client, "owner/repo", 22)).toEqual([]);
+    });
+  });
+
+  describe("hasChangesRequestedReview", () => {
+    it("returns true when any review is CHANGES_REQUESTED", async () => {
+      nock(BASE)
+        .get("/repos/owner/repo/pulls/22/reviews")
+        .query({ per_page: 100 })
+        .reply(200, [{ id: 1, state: "CHANGES_REQUESTED", user: { login: "reviewer" } }]);
+      expect(await hasChangesRequestedReview(client, "owner/repo", 22)).toBe(true);
+    });
+
+    it("returns false when no review is CHANGES_REQUESTED", async () => {
+      nock(BASE)
+        .get("/repos/owner/repo/pulls/22/reviews")
+        .query({ per_page: 100 })
+        .reply(200, [
+          { id: 1, state: "APPROVED", user: { login: "reviewer" } },
+          { id: 2, state: "COMMENTED", user: { login: "reviewer" } },
+        ]);
+      expect(await hasChangesRequestedReview(client, "owner/repo", 22)).toBe(false);
+    });
+
+    it("returns false when there are no reviews", async () => {
+      nock(BASE)
+        .get("/repos/owner/repo/pulls/22/reviews")
+        .query({ per_page: 100 })
+        .reply(200, []);
+      expect(await hasChangesRequestedReview(client, "owner/repo", 22)).toBe(false);
+    });
+  });
+
+  describe("getPRNumberFromReviewResult", () => {
+    const tmp = `/tmp/adt-prnum-test-${Date.now()}`;
+    afterEach(() => {
+      try { require("node:fs").rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
+    });
+
+    it("extracts the PR number from artifacts.prUrl", () => {
+      require("node:fs").mkdirSync(`${tmp}/.adt`, { recursive: true });
+      require("node:fs").writeFileSync(`${tmp}/.adt/review-result.json`, JSON.stringify({
+        status: "done",
+        summary: "ok",
+        artifacts: { prUrl: "https://github.com/owner/repo/pull/22" },
+      }));
+      expect(getPRNumberFromReviewResult(tmp)).toBe(22);
+    });
+
+    it("returns null when the file is missing", () => {
+      expect(getPRNumberFromReviewResult(tmp)).toBeNull();
+    });
+
+    it("returns null when the file is malformed", () => {
+      require("node:fs").mkdirSync(`${tmp}/.adt`, { recursive: true });
+      require("node:fs").writeFileSync(`${tmp}/.adt/review-result.json`, "not json");
+      expect(getPRNumberFromReviewResult(tmp)).toBeNull();
+    });
+
+    it("returns null when artifacts.prUrl is absent", () => {
+      require("node:fs").mkdirSync(`${tmp}/.adt`, { recursive: true });
+      require("node:fs").writeFileSync(`${tmp}/.adt/review-result.json`, JSON.stringify({
+        status: "done",
+        summary: "ok",
+      }));
+      expect(getPRNumberFromReviewResult(tmp)).toBeNull();
+    });
+
+    it("returns null when the URL has no PR number", () => {
+      require("node:fs").mkdirSync(`${tmp}/.adt`, { recursive: true });
+      require("node:fs").writeFileSync(`${tmp}/.adt/review-result.json`, JSON.stringify({
+        status: "done",
+        artifacts: { prUrl: "https://example.com/no-pr-here" },
+      }));
+      expect(getPRNumberFromReviewResult(tmp)).toBeNull();
     });
   });
 });
